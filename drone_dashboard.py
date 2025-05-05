@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from math import sqrt
 import plotly.graph_objects as go
+import time
 
 # --- Constants ---
 COLORS = {'Orlan': 'orange', 'Shahed': 'red', 'Zala': 'green'}
@@ -56,7 +57,7 @@ with col_controls:
         st.session_state.simulation_time = slider_time
         st.session_state.playing = False
 
-# --- Layout: Chart Section (Side by Side) ---
+# --- Layout: Chart Section ---
 col_chart1, col_chart2 = st.columns(2)
 matplotlib_placeholder = col_chart1.empty()
 plotly_placeholder = col_chart2.empty()
@@ -192,11 +193,11 @@ def main():
 
     if st.session_state.playing:
         if current_time < df.time.max():
+            time.sleep(0.3)  # Smooth playback
             st.session_state.simulation_time += 1
             st.experimental_rerun()
         else:
-            st.session_state.playing = False
-            st.experimental_rerun()
+            st.session_state.playing = False  # Stop at the end
 
 if __name__ == "__main__":
     main()
