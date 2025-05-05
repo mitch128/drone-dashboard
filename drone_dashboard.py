@@ -1,16 +1,3 @@
-Context:
-We are at a hackathon. We are at a defense hackathon. We are planning to build a system that firstly uses a two-camera array that sends images captured simultaneously from each of the field of visions in the sky, and then an AI algorithm that searches the images for the presence of the drone, and then tracks the position and trajectory of the drone by comparing its movement from one picture to the next, to the next, and so on. We are then building a system that takes that data output or generates a data output from that, which we can then match with a field position of a number of infantry units at a certain position on the ground near the camera array. For example, let's say there are two positions in two different trenches, and then we, as a end output for the soldiers in those trenches, show a display that is a radar-like image, bird's-eye view with their position in the middle, and then a ring around that, for example, a hundred meter radius, and another ring even wider around that, for example, a one kilometer radius, and it then visualizes the different drones in the area and shows them the real-time position of drones detected and how far away they are. Can you please help us understand what is required to build this and walk me through the full steps and process?
-
-So we need to build something very quickly. We have 18 hours. 5 person team and 3 of the team members are going to handle the image generation, then image detection part of the process. What I am now doing is, I need to take that data that they give me and then build a visualizational dashboard that shows the position of the drones relative to the position of the soldiers. I think maybe a web app would be the best way to demonstrate this for the pitch, but I am not sure. I also think that probably to get started building for now, while we are waiting on the other guys to build the image and photo part, I might need a dummy dataset. Anyway, please directly walk me through right now everything from the dummy dataset all the way through to some sort of web app that builds this user interface or the graphical representation of the drones and the positions. Walk me through exactly doing this step by step now.
-
-NOW:
-
-I currently have the below python code, deployed in a web app (streamlit), on my git hub mitch128/drone-dashboard. Please improve it, make it much more realistic. We need a better, more realistic, mock data set. Trajectories and flight paths are currently not realistic. The projected/estimated impact zone is also not realistic currently. Overall, this is very far from realistic and feels extremely amatuerish.
-
-Please improve it to make it something that would seem like a genuine respectable proof of concept to a real group of Ministry of Defence stakeholders.
-
----
-
 import streamlit as st
 import pandas as pd
 import numpy as np
