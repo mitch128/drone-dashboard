@@ -45,6 +45,7 @@ with col_controls:
     st.write(f"Current time: **{st.session_state.simulation_time}** sec")
     if st.button("Play" if not st.session_state.playing else "Pause"):
         st.session_state.playing = not st.session_state.playing
+
     slider_time = st.slider(
         "Set Simulation Time (seconds)",
         min_value=0,
@@ -56,10 +57,11 @@ with col_controls:
         st.session_state.simulation_time = slider_time
         st.session_state.playing = False
 
-# --- Layout: Chart Section ---
+# --- Layout: Chart Section (Side by Side) ---
 col_chart1, col_chart2 = st.columns(2)
 matplotlib_placeholder = col_chart1.empty()
 plotly_placeholder = col_chart2.empty()
+
 status_placeholder = st.empty()
 alerts_placeholder = st.empty()
 
@@ -78,9 +80,11 @@ def plot_frame(t, three_d=False):
             ax.add_patch(circle)
             ax.text(r - 15, 0, f"{r}m", fontsize=8, color='gray')
         ax.set_title(f"Drone Tracker t={t}s", fontsize=14)
+
         for name, (ix, iy, iz) in infantry.items():
             ax.plot(ix, iy, 'ks', ms=8)
             ax.text(ix + 8, iy + 8, name, fontsize=8)
+
         for drone_id in df.id.unique():
             path = df[(df.id == drone_id) & (df.time <= t)].sort_values('time')
             if len(path) > 1:
@@ -90,6 +94,7 @@ def plot_frame(t, three_d=False):
                     x0, y0 = path.iloc[i][['x', 'y']]
                     x1, y1 = path.iloc[i + 1][['x', 'y']]
                     ax.plot([x0, x1], [y0, y1], ls=':', color=c, alpha=alphas[i])
+
         now = df[df.time == t]
         counts, events, seen = {}, [], set()
         for _, r in now.iterrows():
@@ -101,6 +106,7 @@ def plot_frame(t, three_d=False):
             if r.type == 'Shahed':
                 events.append(f"ALERT {r.id} at ({r.x:.0f},{r.y:.0f})")
                 ax.arrow(r.x, r.y, 100, 80, head_width=10, head_length=10, fc=c, ec=c, alpha=0.5)
+
         ax.legend(loc='upper left', fontsize=8)
         return fig, now, counts, events
     else:
@@ -108,6 +114,7 @@ def plot_frame(t, three_d=False):
         now = df[df.time == t]
         hist = df[df.time <= t]
         counts, events = {}, []
+
         for drone_id, path in hist.groupby("id"):
             c = COLORS[path["type"].iloc[0]]
             fig.add_trace(go.Scatter3d(
@@ -118,6 +125,7 @@ def plot_frame(t, three_d=False):
                 name=drone_id,
                 line=dict(color=c, width=2)
             ))
+
         for _, r in now.iterrows():
             counts[r.type] = counts.get(r.type, 0) + 1
             c = COLORS[r.type]
@@ -133,6 +141,7 @@ def plot_frame(t, three_d=False):
             ))
             if r.type == "Shahed":
                 events.append(f"ALERT {r.id} at ({r.x:.0f},{r.y:.0f})")
+
         for name, (ix, iy, iz) in infantry.items():
             fig.add_trace(go.Scatter3d(
                 x=[ix],
@@ -144,6 +153,7 @@ def plot_frame(t, three_d=False):
                 textposition="top center",
                 showlegend=False
             ))
+
         fig.update_layout(
             scene=dict(
                 xaxis=dict(range=[-600, 600]),
@@ -160,8 +170,10 @@ def plot_frame(t, three_d=False):
 def render(t):
     fig2d, frame2d, counts, events = plot_frame(t, three_d=False)
     matplotlib_placeholder.pyplot(fig2d)
+
     fig3d, *_ = plot_frame(t, three_d=True)
     plotly_placeholder.plotly_chart(fig3d, use_container_width=True)
+
     info_lines = ["**Counts:**"] + [f"- {k}: {v}" for k, v in counts.items()] + ["\n**Closest:**"]
     for name, pos in infantry.items():
         dmin, nearest = float("inf"), "—"
@@ -170,6 +182,7 @@ def render(t):
             if d < dmin:
                 dmin, nearest = d, row.id
         info_lines.append(f"- {name}: {nearest} @ {dmin:.1f}m")
+
     status_placeholder.markdown("\n".join(info_lines))
     alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
 
@@ -178,13 +191,14 @@ def main():
     current_time = st.session_state.simulation_time
     render(current_time)
 
-    # SAFE PLAY LOGIC WITH BOUNDARY CHECK
+    # Auto-play logic with protection
     if st.session_state.playing:
         if current_time < df.time.max():
             time.sleep(1)
             st.session_state.simulation_time += 1
             st.experimental_rerun()
         else:
-            # Stop playing at end of simulation
             st.session_state.playing = False
 
+if __name__ == "__main__":
+    main()
