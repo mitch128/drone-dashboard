@@ -60,47 +60,49 @@ t_max=int(df.time.max())
 play = st.sidebar.checkbox("▶️ Auto Play")
 if 't' not in st.session_state:
     st.session_state.t = 0
+if 'last_run' not in st.session_state:
+    st.session_state.last_run = time.time()
+
+# Handle time slider and autoplay
+t = st.session_state.get("t", 0)
+last_run = st.session_state.get("last_run", time.time())
 
 if play:
-    for t in range(st.session_state.t, t_max + 1):
+    now = time.time()
+    if now - last_run > 0.1 and t < t_max:
+        t += 1
         st.session_state.t = t
-        time.sleep(0.1)
+        st.session_state.last_run = now
         st.experimental_rerun()
 else:
-    t = st.sidebar.slider("Time (s)", 0, t_max, st.session_state.t)
+    t = st.sidebar.slider("Time (s)", 0, t_max, t)
     st.session_state.t = t
-
-t = st.session_state.t
 
 # Summary
 st.sidebar.subheader("Battlefield Summary")
 frame_now=df[df.time==t]
 st.sidebar.markdown(generate_summary(frame_now))
 
-# Columns: give more width to 2D
-col2d, col3d = st.columns([1.4,1])
+# Columns: give more width to both 2D and 3D
+col2d, col3d = st.columns([1.1, 1.1])
 
 # Define uncertainty radii
-unc_small = 30
-unc_large = 80
+unc_small = 15
+unc_large = 40
 
 # 2D Radar
 with col2d:
     st.subheader(f"2D Radar (t={t}s)")
     fig2d=go.Figure()
-    # engagement rings
     for r in [100,300,600]:
         fig2d.add_shape(type='circle',x0=-r,y0=-r,x1=r,y1=r, line=dict(dash='dash',color='gray'))
-    # infantry
     for name,pos in infantry.items():
         fig2d.add_trace(go.Scatter(x=[pos[0]],y=[pos[1]],mode='markers+text',
                                    marker=dict(symbol='square',size=14,color='black'),
                                    text=[name],textposition='top center',showlegend=False))
-    # drone history
     hist=df[df.time<=t]
     for did,grp in hist.groupby('id'):
         fig2d.add_trace(go.Scatter(x=grp.x,y=grp.y,mode='lines',name=did))
-    # current drones + smaller confidence
     for _,r in frame_now.iterrows():
         fig2d.add_shape(type='circle',x0=r.x-unc_small,y0=r.y-unc_small,x1=r.x+unc_small,y1=r.y+unc_small,
                         fillcolor='rgba(135,206,250,0.4)',line_width=0)
