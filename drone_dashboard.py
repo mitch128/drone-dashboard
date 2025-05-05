@@ -94,7 +94,7 @@ def plot_frame(t, three_d=False):
         for drone_id in df.id.unique():
             path = df[(df.id == drone_id) & (df.time <= t)].sort_values('time')
             if len(path) > 1:
-                c = COLORS[path.type.iloc[0]]
+                                c = COLORS[path.type.iloc[0]]
                 alphas = np.linspace(0.2, 0.6, len(path) - 1)
                 for i in range(len(path) - 1):
                     x0, y0 = path.iloc[i][['x', 'y']]
@@ -193,14 +193,20 @@ def render(t):
         info_lines.append(f"- {name}: {nearest} @ {dmin:.1f}m")
     
     status_placeholder.markdown("\n".join(info_lines))
-    alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
+        alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
 
 # --- Main Simulation Logic ---
-current_time = st.session_state.simulation_time
-render(current_time)
+def main():
+    current_time = st.session_state.simulation_time
+    render(current_time)
 
-# If playing and simulation hasn't reached max time, wait and then rerun.
-if st.session_state.playing and current_time < df.time.max():
-    time.sleep(1)  # Adjust delay here if needed.
-    st.session_state.simulation_time = current_time + 1
-    st.experimental_rerun()
+    # If playing and simulation hasn't reached max time, wait and then rerun.
+    if st.session_state.playing and current_time < df.time.max():
+        time.sleep(1)  # Adjust delay here if needed.
+        st.session_state.simulation_time = current_time + 1
+        st.experimental_rerun()
+
+if __name__ == "__main__":
+    main()
+
+
