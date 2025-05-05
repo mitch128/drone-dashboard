@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import math
 import plotly.graph_objects as go
+import time
 
 # --- Dummy Data Generation ---
 def make_dummy_data(duration=120, dt=1):
@@ -53,9 +54,24 @@ def generate_summary(frame):
 st.set_page_config(page_title="Drone Intelligence Dashboard", layout="wide")
 st.title("🚁 Drone Tracking & Threat Visualization")
 
-# Time selector
+# Time selector with play button
 t_max=int(df.time.max())
-t=st.sidebar.slider("Time (s)",0,t_max,0)
+
+play = st.sidebar.checkbox("▶️ Auto Play")
+if 't' not in st.session_state:
+    st.session_state.t = 0
+
+if play:
+    for t in range(st.session_state.t, t_max + 1):
+        st.session_state.t = t
+        time.sleep(0.1)
+        st.experimental_rerun()
+else:
+    t = st.sidebar.slider("Time (s)", 0, t_max, st.session_state.t)
+    st.session_state.t = t
+
+t = st.session_state.t
+
 # Summary
 st.sidebar.subheader("Battlefield Summary")
 frame_now=df[df.time==t]
@@ -86,7 +102,6 @@ with col2d:
         fig2d.add_trace(go.Scatter(x=grp.x,y=grp.y,mode='lines',name=did))
     # current drones + smaller confidence
     for _,r in frame_now.iterrows():
-        # precise vs coarse shading
         fig2d.add_shape(type='circle',x0=r.x-unc_small,y0=r.y-unc_small,x1=r.x+unc_small,y1=r.y+unc_small,
                         fillcolor='rgba(135,206,250,0.4)',line_width=0)
         fig2d.add_shape(type='circle',x0=r.x-unc_large,y0=r.y-unc_large,x1=r.x+unc_large,y1=r.y+unc_large,
@@ -105,7 +120,6 @@ with col3d:
     for did,grp in hist3d.groupby('id'):
         fig3d.add_trace(go.Scatter3d(x=grp.x,y=grp.y,z=grp.z,mode='lines',name=did))
     for _,r in frame_now.iterrows():
-        # confidence spheres smaller
         fig3d.add_trace(go.Scatter3d(x=[r.x],y=[r.y],z=[r.z],mode='markers',
                                       marker=dict(size=unc_large/4,opacity=0.2,color='lightblue'),showlegend=False))
         fig3d.add_trace(go.Scatter3d(x=[r.x],y=[r.y],z=[r.z],mode='markers',
