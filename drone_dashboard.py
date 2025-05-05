@@ -199,11 +199,11 @@ def main():
         if current_time < df.time.max():
             st.session_state.simulation_time += 1
             print(f"Incrementing time to: {st.session_state.simulation_time}")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.session_state.playing = False
             print("Simulation ended. Setting playing to False.")
-            st.experimental_rerun()
+            st.rerun()
 
 if __name__ == "__main__":
     main()
