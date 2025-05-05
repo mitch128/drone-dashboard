@@ -195,13 +195,7 @@ def main():
         if current_time < df.time.max():
             time.sleep(0.3)  # Delay for smooth playback
             st.session_state.simulation_time = current_time + 1
-            try:
-                st.experimental_rerun()
-            except Exception as e:  # Catch general exceptions instead of StopException
-                if "StopException" in str(e):
-                    pass  # This is expected: StopException signals a rerun.
-                else:
-                    raise e  # Reraise other exceptions
+            st.experimental_rerun()  # Try running the rerun directly without exceptions
 
 if __name__ == "__main__":
     main()
