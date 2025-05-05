@@ -9,7 +9,6 @@ import math
 from scipy.interpolate import CubicSpline
 import folium
 from streamlit_folium import folium_static
-import folium
 
 #######################################
 # 1. Generate More Realistic Dummy Drone Data in 3D
@@ -116,26 +115,22 @@ def compute_impact_zone(x, y, z, vx, vy, vz, seconds=5):
     return (proj_x, proj_y, proj_z, impact_radius)
 
 #######################################
-# 3. 3D Plotting Function for a Single Timeframe
+# 3. 2D Plotting Function for a Single Timeframe with Map Overlay
 #######################################
-def plot_radar_frame_3d(t):
-    fig = plt.figure(figsize=(10,8))
-    ax = fig.add_subplot(111, projection='3d')
+def plot_radar_frame_2d(t):
+    fig, ax = plt.subplots(figsize=(10, 8))
     ax.set_facecolor('#F7F7F7')
-    ax.set_title(f"3D Drone Tracker – Time = {t}s", fontsize=16)
+    ax.set_title(f"2D Drone Tracker – Time = {t}s", fontsize=16)
 
     ax.set_xlim(-700, 700)
     ax.set_ylim(-700, 700)
-    ax.set_zlim(0, 400)
 
-    xx, yy = np.meshgrid(np.linspace(-700,700,2), np.linspace(-700,700,2))
-    zz = np.zeros_like(xx)
-    ax.plot_surface(xx, yy, zz, color='lightgray', alpha=0.3)
-
+    # Plot friendly unit positions
     for name, (ix, iy, iz) in infantry_positions.items():
-        ax.scatter(ix, iy, iz, c='k', marker='^', s=100)
-        ax.text(ix+10, iy+10, iz+10, name, fontsize=10, color='black')
+        ax.scatter(ix, iy, c='k', marker='^', s=100)
+        ax.text(ix+10, iy+10, name, fontsize=10, color='black')
 
+    # Plot drones and collect events for log display
     frame = df[df.time == t]
     drone_info = {}
     events = []
@@ -150,34 +145,29 @@ def plot_radar_frame_3d(t):
         else:
             color = 'green'
 
-        ax.scatter(row.x, row.y, row.z, c=color, marker='o', s=80, alpha=0.9)
-        vel_mag = math.sqrt(row.velocity_x**2 + row.velocity_y**2 + row.velocity_z**2)
-        ax.text(row.x+10, row.y+10, row.z+10, f"{row['id']}\n{drone_type}\nV:{vel_mag:.1f}", fontsize=9, color=color)
+        ax.scatter(row.x, row.y, c=color, marker='o', s=80, alpha=0.9)
+        vel_mag = math.sqrt(row.velocity_x**2 + row.velocity_y**2)
+        ax.text(row.x+10, row.y+10, f"{row['id']}\n{drone_type}\nV:{vel_mag:.1f}", fontsize=9, color=color)
 
         if drone_type == 'Shahed':
-            vx, vy, vz = row.velocity_x, row.velocity_y, row.velocity_z
-            proj_x, proj_y, proj_z, impact_radius = compute_impact_zone(row.x, row.y, row.z, vx, vy, vz, seconds=5)
-            ax.quiver(row.x, row.y, row.z, proj_x-row.x, proj_y-row.y, proj_z-row.z,
-                      color='red', length=1, normalize=False, arrow_length_ratio=0.15, alpha=0.6)
-            u = np.linspace(0, 2 * np.pi, 20)
-            v = np.linspace(0, np.pi, 10)
-            xs = proj_x + impact_radius * np.outer(np.cos(u), np.sin(v))
-            ys = proj_y + impact_radius * np.outer(np.sin(u), np.sin(v))
-            zs = proj_z + impact_radius * np.outer(np.ones(np.size(u)), np.cos(v))
-            ax.plot_wireframe(xs, ys, zs, color='red', alpha=0.3)
-            ax.text(proj_x+10, proj_y+10, proj_z+10, "Impact Zone", fontsize=8, color='red')
-            events.append(f"ALERT: {row['id']} [{drone_type}] projected impact zone at ({proj_x:.1f}, {proj_y:.1f}, {proj_z:.1f}) with radius {impact_radius:.1f}m")
+            vx, vy = row.velocity_x, row.velocity_y
+            proj_x, proj_y, _, impact_radius = compute_impact_zone(row.x, row.y, row.z, vx, vy, 0, seconds=5)
+            ax.quiver(row.x, row.y, proj_x-row.x, proj_y-row.y, color='red', angles='xy', scale_units='xy', scale=1)
+            impact_circle = plt.Circle((proj_x, proj_y), impact_radius, color='red', fill=False, linestyle='dashed', linewidth=2)
+            ax.add_patch(impact_circle)
+            ax.text(proj_x+10, proj_y+10, "Impact Zone", fontsize=8, color='red')
+            events.append(f"ALERT: {row['id']} [{drone_type}] projected impact zone at ({proj_x:.1f}, {proj_y:.1f}) with radius {impact_radius:.1f}m")
 
     return fig, frame, drone_info, events
 
 #######################################
-# 4. Streamlit UI – Command Center Dashboard for 3D Visualization
+# 4. Streamlit UI – Command Center Dashboard for 2D Visualization with Map Overlay
 #######################################
-st.set_page_config(page_title="Drone Intelligence Dashboard (3D)", layout="wide")
-st.title("Drone Intelligence Dashboard (3D)")
+st.set_page_config(page_title="Drone Intelligence Dashboard (2D)", layout="wide")
+st.title("Drone Intelligence Dashboard (2D)")
 st.markdown("""
-This tool monitors enemy drone activity in a 3D space relative to frontline units.
-Key data includes position (x, y, z), time, and velocity.
+This tool monitors enemy drone activity in a 2D space relative to frontline units.
+Key data includes position (x, y), time, and velocity.
 Use the control panel to play or step through the simulation.
 """)
 
@@ -187,7 +177,7 @@ t_slider = st.sidebar.slider("Select Time (s)", 0, int(df.time.max()), 0, 1, key
 play = st.sidebar.button("Play Live Simulation")
 update_interval = st.sidebar.number_input("Simulation Speed (seconds per frame)", min_value=0.1, max_value=5.0, value=0.75, step=0.1)
 
-# Layout: left for 3D radar display, right for summary and event log
+# Layout: left for 2D radar display, right for summary and event log
 col_radar, col_summary = st.columns([2, 1])
 with col_radar:
     radar_placeholder = st.empty()
@@ -223,7 +213,7 @@ def generate_summary(frame, drone_info):
 if play:
     max_time = int(df.time.max())
     for t in range(t_slider, max_time + 1):
-        fig, frame, drone_info, events = plot_radar_frame_3d(t)
+        fig, frame, drone_info, events = plot_radar_frame_2d(t)
         radar_placeholder.pyplot(fig)
         summary_placeholder.markdown(generate_summary(frame, drone_info))
         if events:
@@ -233,7 +223,7 @@ if play:
         time.sleep(update_interval)
     st.session_state["time_slider"] = max_time
 else:
-    fig, frame, drone_info, events = plot_radar_frame_3d(t_slider)
+    fig, frame, drone_info, events = plot_radar_frame_2d(t_slider)
     radar_placeholder.pyplot(fig)
     summary_placeholder.markdown(generate_summary(frame, drone_info))
     if events:
