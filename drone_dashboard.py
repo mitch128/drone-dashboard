@@ -187,9 +187,6 @@ def render(t):
     alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
 
 # --- Main Simulation Logic ---
-import streamlit as st
-import time
-
 def main():
     current_time = st.session_state.simulation_time
     render(current_time)
@@ -200,13 +197,11 @@ def main():
             st.session_state.simulation_time = current_time + 1
             try:
                 st.experimental_rerun()
-            except st.ScriptRunner.StopException:
-                # This is expected: StopException signals a rerun.
-                pass
-        else:
-            st.session_state.playing = False
+            except Exception as e:  # Catch general exceptions instead of StopException
+                if "StopException" in str(e):
+                    pass  # This is expected: StopException signals a rerun.
+                else:
+                    raise e  # Reraise other exceptions
 
 if __name__ == "__main__":
     main()
-
-
