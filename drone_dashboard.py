@@ -190,7 +190,6 @@ def main():
     current_time = st.session_state.simulation_time
     render(current_time)
 
-    # Auto-play logic with protection
     if st.session_state.playing:
         if current_time < df.time.max():
             st.session_state.simulation_time += 1
