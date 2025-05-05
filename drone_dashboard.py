@@ -104,19 +104,16 @@ def plot_radar_frame(t):
         ax.text(row.x + 10, row.y + 10, f"{row.id}\n({row['type']})", fontsize=9, color=color)
         
         # For "Shahed", show projected trajectory and potential impact zone
-        if row['type'] == 'Shahed':
-                        ax.arrow(row.x, row.y, 100, 80, head_width=20, head_length=20,
-                     fc='red', ec='red', alpha=0.5)
-            ax.text(row.x + 100, row.y + 80, "THREAT AREA", color='red', fontsize=10)
+if row['type'] == 'Shahed':
+    ax.arrow(row.x, row.y, 100, 80, head_width=20, head_length=20,
+             fc='red', ec='red', alpha=0.5)
+    ax.text(row.x + 100, row.y + 80, "THREAT AREA", color='red', fontsize=10)
 
-        # Plot trajectory dotted lines
-        previous_row = df[(df['id'] == row['id']) & (df['time'] < t)].sort_values(by='time', ascending=False).head(1)
-        if not previous_row.empty:
-            previous_row = previous_row.iloc[0]
-            ax.plot([previous_row['x'], row['x']], [previous_row['y'], row['y']], linestyle='--', color=color, alpha=0.5)
-
-    ax.grid(True)
-    return fig, frame, drone_info, events
+# Plot trajectory dotted lines
+previous_row = df[(df['id'] == row['id']) & (df['time'] < t)].sort_values(by='time', ascending=False).head(1)
+if not previous_row.empty:
+    previous_row = previous_row.iloc[0]
+    ax.plot([previous_row['x'], row['x']], [previous_row['y'], row['y']], linestyle='--', color=color, alpha=0.5)
 
 def plot_3d_frame(t):
     fig = plt.figure(figsize=(8,8))
@@ -152,13 +149,14 @@ def plot_3d_frame(t):
         # For "Shahed", show projected trajectory and potential impact zone
         if row['type'] == 'Shahed':
             ax.quiver(row.x, row.y, row.z, 100, 80, 0, color='red', alpha=0.5)
-            ax.text(row.x + 100, row.y + 80, row.z, "THREAT AREA", color='red', fontsize=10)
+            ax.text(row.x + 100, row.y, row.z, "THREAT AREA", color='red', fontsize=10)
 
         # Plot trajectory dotted lines
         previous_row = df[(df['id'] == row['id']) & (df['time'] < t)].sort_values(by='time', ascending=False).head(1)
         if not previous_row.empty:
             previous_row = previous_row.iloc[0]
-            ax.plot([previous_row['x'], row['x']], [previous_row['y'], row['y']], [previous_row['z'], row['z']], linestyle='--', color=color, alpha=0.5)
+            ax.plot([previous_row['x'], row['x']], [previous_row['y'], row['y']], [previous_row['z'], row['z']], linestyle='-', color=color, alpha=0.5)
+
 
     ax.set_xlim(-600, 600)
     ax.set_ylim(-600, 600)
