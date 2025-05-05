@@ -50,7 +50,10 @@ def generate_summary(frame):
         for _,r in frame.iterrows():
             dist=euclid(pos,(r.x,r.y,r.z))
             if dist<dmin: dmin,closest=dist,f"{r['type']} ({r['id']})"
-        lines.append(f"- {name}: {closest if closest else 'No drone detected'} at {dmin:.1f} m" if closest else f"- {name}: No drone detected")
+        if closest:
+            lines.append(f"- {name}: {closest} at {dmin:.1f} m")
+        else:
+            lines.append(f"- {name}: No drone detected")
     return "\n".join(lines)
 
 # Streamlit UI
@@ -69,39 +72,54 @@ st.sidebar.markdown(generate_summary(frame_now))
 # Tabs
 tab2d,tab3d,tabmap = st.tabs(["2D Radar","3D View","Map View"])
 
-# 2D Radar
+# 2D Radar view
 with tab2d:
     fig2d = go.Figure()
+    # radar rings
     for r in [100,300,600]:
-        fig2d.add_shape(type='circle', x0=-r,y0=-r,x1=r,y1=r, line=dict(dash='dash',color='gray'))
+        fig2d.add_shape(type='circle', x0=-r, y0=-r, x1=r, y1=r, line=dict(dash='dash',color='gray'))
+    # infantry markers
     for name,pos in infantry.items():
-        fig2d.add_trace(go.Scatter(x=[pos[0]],y=[pos[1]],mode='markers+text',marker=dict(symbol='square',size=12),text=[name],textposition='top right',showlegend=False))
-    hist=df[df.time<=t]
+        fig2d.add_trace(go.Scatter(x=[pos[0]], y=[pos[1]], mode='markers+text',
+                                   marker=dict(symbol='square',size=12), text=[name], textposition='top right', showlegend=False))
+    # drone trajectories
+    hist = df[df.time<=t]
     for did,grp in hist.groupby('id'):
         fig2d.add_trace(go.Scatter(x=grp.x,y=grp.y,mode='lines',name=did))
+    # current drone positions
     for _,r in frame_now.iterrows():
-        color='red' if 'Shahed' in r.type else ('blue' if 'Mavic' in r.type else 'green')
-        fig2d.add_trace(go.Scatter(x=[r.x],y=[r.y],mode='markers+text',marker=dict(size=14,color=color),text=[r.id],textposition='bottom right',showlegend=False))
-    fig2d.update_layout(xaxis=dict(range=[-1200,1200]),yaxis=dict(range=[-1200,1200]),title=f"2D Radar at t={t}s",height=600)
+        color = 'red' if 'Shahed' in r.type else ('blue' if 'Mavic' in r.type else 'green')
+        fig2d.add_trace(go.Scatter(x=[r.x],y=[r.y],mode='markers+text',
+                                   marker=dict(size=14,color=color), text=[r.id], textposition='bottom right', showlegend=False))
+    fig2d.update_layout(xaxis=dict(range=[-1200,1200]), yaxis=dict(range=[-1200,1200]),
+                        title=f"2D Radar at t={t}s", height=600)
     st.plotly_chart(fig2d,use_container_width=True)
 
 # 3D View
 with tab3d:
     fig3d = go.Figure()
-    # show trajectory lines in 3D
+    # plot drone trajectories in 3D
     hist3d = df[df.time<=t]
     for did,grp in hist3d.groupby('id'):
         fig3d.add_trace(go.Scatter3d(x=grp.x,y=grp.y,z=grp.z,mode='lines',name=did))
-    # show current positions
+    # plot current drone positions
     for _,r in frame_now.iterrows():
-        fig3d.add_trace(go.Scatter3d(x=[r.x],y=[r.y],z=[r.z],mode='markers+text',marker=dict(size=6),text=[r.id]))
-    fig3d.update_layout(scene=dict(xaxis=dict(range=[-1200,1200]),yaxis=dict(range=[-1200,1200]),zaxis=dict(range=[0,1200])),title=f"3D View at t={t}s",height=600)
+        fig3d.add_trace(go.Scatter3d(x=[r.x],y=[r.y],z=[r.z],mode='markers+text',
+                                    marker=dict(size=6), text=[r.id], showlegend=False))
+    # add infantry bases in 3D
+    for name,pos in infantry.items():
+        fig3d.add_trace(go.Scatter3d(x=[pos[0]],y=[pos[1]],z=[pos[2]],mode='markers+text',
+                                    marker=dict(symbol='square',size=8), text=[name], textposition='top center', showlegend=False))
+    fig3d.update_layout(scene=dict(xaxis=dict(range=[-1200,1200]),
+                                   yaxis=dict(range=[-1200,1200]),
+                                   zaxis=dict(range=[0,1200])),
+                        title=f"3D View at t={t}s", height=600)
     st.plotly_chart(fig3d,use_container_width=True)
 
 # Map View
 with tabmap:
     df_map = frame_now.rename(columns={'x':'lon','y':'lat'})
     layer = pdk.Layer('ScatterplotLayer', data=df_map, get_position='[lon, lat]', get_radius=50, pickable=True)
-    view = pdk.ViewState(longitude=float(df_map.lon.mean()),latitude=float(df_map.lat.mean()),zoom=10)
+    view = pdk.ViewState(longitude=float(df_map.lon.mean()), latitude=float(df_map.lat.mean()), zoom=10)
     deck = pdk.Deck(layers=[layer], initial_view_state=view)
     st.pydeck_chart(deck)
