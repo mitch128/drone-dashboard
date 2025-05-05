@@ -5,139 +5,138 @@ import matplotlib.pyplot as plt
 import time
 import math
 
-# — 1. Generate dummy drone data —
-def make_dummy_data():
-    # Simulate timestamps 0–10
-    timestamps = np.arange(0, 11)
-    rows = []
-    for t in timestamps:
-        # One‐way attack drone
-        rows.append({'time': t, 'id': 'D1', 'type': 'Shahed', 
-                     'x': -400 + 50 * t, 'y': -300 + 40 * t})
-        # Hover‐capable drone
-        rows.append({'time': t, 'id': 'D2', 'type': 'DJI Mavic', 
-                     'x': 100 + 10 * np.sin(t), 'y': 150 + 10 * np.cos(t)})
-        # Recon drone
-        rows.append({'time': t, 'id': 'D3', 'type': 'Recon', 
-                     'x': -200 + 5 * t, 'y': 300 - 2 * t})
-    df = pd.DataFrame(rows)
-    return df
+# Page setup
+st.set_page_config(layout="wide")
+st.title("🔍 Real-Time Drone Detection & Tracking Dashboard")
 
-df = make_dummy_data()
+# Simulate sample data
+np.random.seed(42)
+n_drones = 5
+n_steps = 60  # 60 seconds of data
+timestamps = pd.date_range(start="2025-05-05 10:00:00", periods=n_steps, freq="S")
 
-# — 2. Define infantry positions —
+def generate_movement(drone_type, center=(0,0), speed=1.5):
+    x, y = center
+    path = []
+    for t in range(n_steps):
+        if drone_type == "Shahed":  # linear, fast
+            x += speed
+        elif drone_type == "Mavic":  # random movement
+            x += np.random.normal(0, 1)
+            y += np.random.normal(0, 1)
+        path.append((x, y))
+    return path
+
+drone_types = ["Shahed", "Mavic", "Shahed", "Mavic", "Shahed"]
+drone_data = []
+
+for i, drone_type in enumerate(drone_types):
+    path = generate_movement(drone_type, center=(np.random.randint(-500, 500), np.random.randint(-500, 500)), speed=np.random.uniform(2, 5))
+    for t, (x, y) in enumerate(path):
+        drone_data.append({
+            "id": i,
+            "timestamp": timestamps[t],
+            "drone_type": drone_type,
+            "x": x,
+            "y": y,
+            "certainty": np.clip(np.random.normal(0.85, 0.05), 0.7, 0.99)
+        })
+
+df = pd.DataFrame(drone_data)
+
+# Infantry positions
 infantry_positions = {
-    "Alpha": (0, 0),
-    "Bravo": (200, 100),
-    "Charlie": (-150, -100)
+    "Trench A": (-300, -300),
+    "Trench B": (0, 0),
+    "Trench C": (300, 300)
 }
 
-# — Utility: Calculate Euclidean distance between two points —
-def distance(p1, p2):
-    return math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
+# Sidebar controls
+with st.sidebar:
+    st.header("⚙️ Controls")
+    play = st.button("▶️ Start Simulation")
+    stop = st.button("⏹️ Stop")
+    show_paths = st.checkbox("Show Drone Paths", value=True)
 
-# — 3. Plotting function for one frame—
-def plot_radar_frame(t):
+# Initialize session state for time_slider
+if 'time_slider' not in st.session_state:
+    st.session_state.time_slider = 0  # Initialize slider
+
+# Prepare radar visualization
+def radar_plot(current_time, df, show_paths=False):
     fig, ax = plt.subplots(figsize=(7,7))
-    ax.set_facecolor('white')
     ax.set_xlim(-600, 600)
     ax.set_ylim(-600, 600)
-    ax.set_title(f"Drone Radar – t = {t}s")
+    ax.set_facecolor("white")
+    ax.set_title(f"Radar View at {current_time.time()}", fontsize=14)
 
-    # Draw range rings at 100, 250, 500 m
-    for r in (100, 250, 500):
-        circle = plt.Circle((0,0), r, fill=False, linestyle='--', color='gray')
+    # Radar range rings
+    for radius in [100, 250, 500]:
+        circle = plt.Circle((0, 0), radius, color="gray", fill=False, linestyle='--')
         ax.add_patch(circle)
-        ax.text(r, 0, f"{r}m", color='gray')
+        ax.text(5, radius-10, f"{radius}m", color='gray')
 
-    # Plot infantry
-    for name, (ix, iy) in infantry_positions.items():
-        ax.plot(ix, iy, 'ks', markersize=10)
-        ax.text(ix+10, iy+10, name, fontsize=9, color='black')
+    # Infantry
+    for name, (x, y) in infantry_positions.items():
+        ax.plot(x, y, "s", color="blue", markersize=10)
+        ax.text(x+10, y+10, name, fontsize=10)
 
-    # Plot drones and collect summary info
-    frame = df[df.time == t]
-    drone_info = {}  # key: type, value: count
-    for _, row in frame.iterrows():
-        # Update count
-        drone_info[row['type']] = drone_info.get(row['type'], 0) + 1
+    # Drone plotting
+    current_drones = df[df['timestamp'] == current_time]
+    for drone_id in current_drones['id'].unique():
+        drone = current_drones[current_drones['id'] == drone_id].iloc[0]
+        x, y = drone["x"], drone["y"]
+        color = "red" if drone["drone_type"] == "Shahed" else "orange"
+        label = f"ID {drone_id} ({drone['drone_type']})"
+        ax.plot(x, y, "o", color=color, markersize=10)
+        ax.text(x+5, y+5, label, fontsize=8)
 
-        # Choose color based on drone type
-        if row['type'] == 'Shahed':
-            color = 'red'
-        elif row['type'] == 'DJI Mavic':
-            color = 'blue'
-        else:
-            color = 'green'
+        # Prediction (for Shahed only)
+        if drone["drone_type"] == "Shahed":
+            direction = np.array([x, y]) - np.array([0, 0])
+            norm = np.linalg.norm(direction)
+            if norm > 0:
+                unit = direction / norm
+                predicted = np.array([x, y]) + unit * 200
+                ax.plot([x, predicted[0]], [y, predicted[1]], linestyle="--", color="red")
+                ax.text(predicted[0], predicted[1], "→ impact", fontsize=8, color="darkred")
 
-        ax.plot(row.x, row.y, 'o', color=color, markersize=12, alpha=0.8)
-        ax.text(row.x+10, row.y+10, f"{row.id} ({row['type']})", fontsize=9)
-        # Draw projected path (for the Shahed drone)
-        if row['type']=='Shahed':
-            ax.arrow(row.x, row.y, 100, 80, head_width=20, head_length=20,
-                     fc='red', ec='red', alpha=0.4)
-            ax.text(row.x+100, row.y+80, "Impact", color='red', fontsize=8)
+        if show_paths:
+            history = df[(df["id"] == drone_id) & (df["timestamp"] <= current_time)]
+            ax.plot(history["x"], history["y"], linestyle=":", alpha=0.4, linewidth=1)
 
-    ax.grid(True)
-    return fig, frame, drone_info
+    return fig
 
-# — 4. Streamlit UI Setup —  
-st.title("Drone Radar Dashboard")
+# Summary panel
+def summary_panel(current_time):
+    sub_df = df[df['timestamp'] == current_time]
+    st.metric("📡 Total Active Drones", len(sub_df))
+    shaheds = sub_df[sub_df["drone_type"] == "Shahed"]
+    mavics = sub_df[sub_df["drone_type"] == "Mavic"]
+    st.metric("🚀 One-Way Drones (Shahed)", len(shaheds))
+    st.metric("📷 Recon Drones (Mavic)", len(mavics))
 
-# Create two columns: one for control buttons and slider, one for summary stats
-col1, col2 = st.columns([2,1])
+    close_to_base = 0
+    for _, drone in sub_df.iterrows():
+        for pos in infantry_positions.values():
+            distance = math.hypot(drone['x'] - pos[0], drone['y'] - pos[1])
+            if distance < 250:
+                close_to_base += 1
+                break
+    st.metric("⚠️ Drones <250m From Any Infantry", close_to_base)
 
-with col1:
-    st.subheader("Controls")
-    # Slider to manually select time
-    t_slider = st.slider("Time (s)", 0, int(df.time.max()), 0, 1, key='time_slider')
-    play = st.button("Play Real Time")
-
-# Placeholder for the plot
-plot_placeholder = st.empty()
-
-# Placeholder for summary stats
-summary_placeholder = st.empty()
-
-# Function to generate summary stats based on current frame and infantry positions
-def generate_summary(frame, drone_info):
-    summary_lines = []
-    summary_lines.append("### Summary Statistics")
-    
-    # Drone counts by type
-    summary_lines.append("**Drone Counts:**")
-    for drone_type, count in drone_info.items():
-        summary_lines.append(f"- {drone_type}: {count}")
-    
-    # Nearest drone distances for each infantry unit
-    summary_lines.append("\n**Nearest Drone per Infantry Unit:**")
-    for name, pos in infantry_positions.items():
-        min_dist = float("inf")
-        which_drone = None
-        for _, row in frame.iterrows():
-            d = distance(pos, (row.x, row.y))
-            if d < min_dist:
-                min_dist = d
-                which_drone = row['id']
-        if which_drone:
-            summary_lines.append(f"- {name}: Drone {which_drone} at {min_dist:.1f} m")
-        else:
-            summary_lines.append(f"- {name}: No drone detected")
-    return "\n".join(summary_lines)
-
-# Real-time animation or manual slider update handling:
+# Real-time simulation
 if play:
-    # Disable slider when playing animation
-    max_time = int(df.time.max())
-    for t in range(t_slider, max_time+1):
-        fig, frame, drone_info = plot_radar_frame(t)
-        plot_placeholder.pyplot(fig)
-        summary_placeholder.markdown(generate_summary(frame, drone_info))
-        time.sleep(1)  # Pause for 1 second for demonstration; adjust timing as needed
-    # Reset slider value to the last frame after finishing play
-    st.session_state.time_slider = max_time
-else:
-    # When not playing, simply update based on slider
-    fig, frame, drone_info = plot_radar_frame(t_slider)
-    plot_placeholder.pyplot(fig)
-    summary_placeholder.markdown(generate_summary(frame, drone_info))
+    placeholder = st.empty()
+    stats_col = st.sidebar.container()
+    for t in timestamps:
+        with placeholder.container():
+            col1, col2 = st.columns([2,1])
+            with col1:
+                fig = radar_plot(t, df, show_paths=show_paths)
+                st.pyplot(fig)
+            with col2:
+                with stats_col:
+                    st.subheader("📊 Summary")
+                    summary_panel(t)
+        time.sleep(0.2)
