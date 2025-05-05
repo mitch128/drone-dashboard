@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import time
 import math
 
@@ -19,7 +20,8 @@ def make_dummy_data():
             'id': 'D1',
             'type': 'Shahed',
             'x': -400 + 50 * t,
-            'y': -300 + 40 * t
+            'y': -300 + 40 * t,
+            'z': 100
         })
         # Recon drone (DJI Mavic)
         rows.append({
@@ -27,7 +29,8 @@ def make_dummy_data():
             'id': 'D2',
             'type': 'DJI Mavic',
             'x': 100 + 10 * np.sin(t),
-            'y': 150 + 10 * np.cos(t)
+            'y': 150 + 10 * np.cos(t),
+            'z': 50
         })
         # Surveillance drone (Recon)
         rows.append({
@@ -35,7 +38,8 @@ def make_dummy_data():
             'id': 'D3',
             'type': 'Recon',
             'x': -200 + 5 * t,
-            'y': 300 - 2 * t
+            'y': 300 - 2 * t,
+            'z': 200
         })
     df = pd.DataFrame(rows)
     return df
@@ -46,16 +50,16 @@ df = make_dummy_data()
 # 2. Define Friendly Positions (Frontline Units)
 #######################################
 infantry_positions = {
-    "Alpha (1st Battalion HQ)": (0, 0),
-    "Bravo (FOB – Forward Operating Base)": (200, 100),
-    "Charlie (Observation Post)": (-150, -100)
+    "Alpha (1st Battalion HQ)": (0, 0, 0),
+    "Bravo (FOB – Forward Operating Base)": (200, 100, 0),
+    "Charlie (Observation Post)": (-150, -100, 0)
 }
 
 #######################################
 # Utility: Euclidean Distance Calculation
 #######################################
 def distance(p1, p2):
-    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
+    return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
 
 #######################################
 # 3. Plotting Function for a Single Timeframe
@@ -74,7 +78,7 @@ def plot_radar_frame(t):
         ax.text(r - 20, 0, f"{r}m", color='gray', fontsize=8)
 
     # Plot frontline unit positions
-    for name, (ix, iy) in infantry_positions.items():
+    for name, (ix, iy, iz) in infantry_positions.items():
         ax.plot(ix, iy, 'ks', markersize=12)
         ax.text(ix + 10, iy + 10, name, fontsize=10, color='black')
 
@@ -101,11 +105,64 @@ def plot_radar_frame(t):
         
         # For "Shahed", show projected trajectory and potential impact zone
         if row['type'] == 'Shahed':
-            ax.arrow(row.x, row.y, 100, 80, head_width=20, head_length=20,
+                        ax.arrow(row.x, row.y, 100, 80, head_width=20, head_length=20,
                      fc='red', ec='red', alpha=0.5)
             ax.text(row.x + 100, row.y + 80, "THREAT AREA", color='red', fontsize=10)
 
+        # Plot trajectory dotted lines
+        previous_row = df[(df['id'] == row['id']) & (df['time'] < t)].sort_values(by='time', ascending=False).head(1)
+        if not previous_row.empty:
+            previous_row = previous_row.iloc[0]
+            ax.plot([previous_row['x'], row['x']], [previous_row['y'], row['y']], linestyle='--', color=color, alpha=0.5)
+
     ax.grid(True)
+    return fig, frame, drone_info, events
+
+def plot_3d_frame(t):
+    fig = plt.figure(figsize=(8,8))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_title(f"Live Drone Tracker – t = {t}s", fontsize=16)
+
+    # Plot frontline unit positions
+    for name, (ix, iy, iz) in infantry_positions.items():
+        ax.scatter(ix, iy, iz, c='k', marker='s', s=100)
+        ax.text(ix, iy, iz, name, fontsize=10, color='black')
+
+    # Plot drones and collect events for log display
+    frame = df[df.time == t]
+    drone_info = {}
+    events = []
+    for _, row in frame.iterrows():
+        # Count drone types
+        drone_info[row['type']] = drone_info.get(row['type'], 0) + 1
+        # Set color for drone type
+        if row['type'] == 'Shahed':  # High-threat attack drone
+            color = 'red'
+            # Log event for high-threat drone detection
+            events.append(f"ALERT: {row['type']} ({row['id']}) detected at ({row['x']}, {row['y']})")
+        elif row['type'] == 'DJI Mavic':  # Recon drone
+            color = 'blue'
+        else:  # Surveillance drone
+            color = 'green'
+
+        # Plot drone position
+        ax.scatter(row.x, row.y, row.z, c=color, marker='o', s=100)
+        ax.text(row.x, row.y, row.z, f"{row.id}\n({row['type']})", fontsize=9, color=color)
+
+        # For "Shahed", show projected trajectory and potential impact zone
+        if row['type'] == 'Shahed':
+            ax.quiver(row.x, row.y, row.z, 100, 80, 0, color='red', alpha=0.5)
+            ax.text(row.x + 100, row.y + 80, row.z, "THREAT AREA", color='red', fontsize=10)
+
+        # Plot trajectory dotted lines
+        previous_row = df[(df['id'] == row['id']) & (df['time'] < t)].sort_values(by='time', ascending=False).head(1)
+        if not previous_row.empty:
+            previous_row = previous_row.iloc[0]
+            ax.plot([previous_row['x'], row['x']], [previous_row['y'], row['y']], [previous_row['z'], row['z']], linestyle='--', color=color, alpha=0.5)
+
+    ax.set_xlim(-600, 600)
+    ax.set_ylim(-600, 600)
+    ax.set_zlim(0, 500)
     return fig, frame, drone_info, events
 
 #######################################
@@ -129,9 +186,10 @@ col_radar, col_summary = st.columns([2, 1])
 
 with col_radar:
     radar_placeholder = st.empty()
+    radar_3d_placeholder = st.empty()
 with col_summary:
     st.subheader("Battlefield Summary")
-    summary_placeholder = st.empty()
+       summary_placeholder = st.empty()
     st.subheader("Event Log")
     event_placeholder = st.empty()
 
@@ -146,7 +204,7 @@ def generate_summary(frame, drone_info):
         min_dist = float("inf")
         closest_drone = None
         for _, row in frame.iterrows():
-            d = distance(pos, (row.x, row.y))
+            d = distance((row['x'], row['y'], row['z']), pos)
             if d < min_dist:
                 min_dist = d
                 closest_drone = f"{row['type']} ({row['id']})"
@@ -165,6 +223,8 @@ if play:
     for t in range(t_slider, max_time + 1):
         fig, frame, drone_info, events = plot_radar_frame(t)
         radar_placeholder.pyplot(fig)
+        fig_3d, frame_3d, drone_info_3d, events_3d = plot_3d_frame(t)
+        radar_3d_placeholder.pyplot(fig_3d)
         summary_placeholder.markdown(generate_summary(frame, drone_info))
         # Display event log if there are any alerts; if not, say "No new events"
         if events:
@@ -178,8 +238,12 @@ else:
     # Display the current frame based on the slider value
     fig, frame, drone_info, events = plot_radar_frame(t_slider)
     radar_placeholder.pyplot(fig)
+    fig_3d, frame_3d, drone_info_3d, events_3d = plot_3d_frame(t_slider)
+    radar_3d_placeholder.pyplot(fig_3d)
     summary_placeholder.markdown(generate_summary(frame, drone_info))
     if events:
         event_placeholder.markdown("\n".join([f"- {e}" for e in events]))
     else:
         event_placeholder.markdown("No critical events at this time")
+
+
