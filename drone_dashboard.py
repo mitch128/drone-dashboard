@@ -187,7 +187,7 @@ with col_radar:
     radar_3d_placeholder = st.empty()
 with col_summary:
     st.subheader("Battlefield Summary")
-       summary_placeholder = st.empty()
+    summary_placeholder = st.empty()
     st.subheader("Event Log")
     event_placeholder = st.empty()
 
