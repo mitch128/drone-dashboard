@@ -157,8 +157,6 @@ with tab_map:
                           get_position=['lon','lat'], get_radius=50)])
     st.pydeck_chart(deck)
 
-# Auto-play
-if play:
-    for t in range(current_t, duration + 1):
-        time.sleep(1 / speed)
-        st.experimental_rerun()
+# Auto-play: simple loop with rerun removed
+# (experimental_rerun may not be available; control via slider instead)
+# If you need auto-play, manually adjust 'current_t' or re-run with updated value.
