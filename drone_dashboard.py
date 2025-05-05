@@ -33,36 +33,41 @@ st.set_page_config(layout="wide")
 st.title("🛡️ Drone Tracker Dashboard")
 st.markdown("Simulated radar view for infantry teams to monitor aerial drone threats in real time.")
 
-# --- Session State Setup for Play/Pause ---
+# --- Session State Setup ---
 if "simulation_time" not in st.session_state:
     st.session_state.simulation_time = 0
 if "playing" not in st.session_state:
     st.session_state.playing = False
 
-# --- Layout Controls ---
-# Left column for slider and auto play checkbox.
+# --- Layout: Controls Section ---
 col_controls, col_charts = st.columns([1, 3])
 with col_controls:
-    # Slider to adjust simulation time manually.
-    user_t = st.slider(
-        "Simulation time (seconds)",
+    # Display current simulation time.
+    st.write(f"Current time: **{st.session_state.simulation_time}** sec")
+    # Single play/pause button.
+    if st.button("Play" if not st.session_state.playing else "Pause"):
+        st.session_state.playing = not st.session_state.playing
+    # Slider to manually adjust simulation time.
+    slider_time = st.slider(
+        "Set Simulation Time (seconds)",
         min_value=0,
         max_value=int(df.time.max()),
         value=st.session_state.simulation_time,
-        key="time_slider",
+        key="time_slider"
     )
-    st.session_state.simulation_time = user_t
-    # Checkbox to toggle auto play.
-    auto_play = st.checkbox("Auto Play", value=st.session_state.playing)
-    st.session_state.playing = auto_play
+    # If slider was used, update time and pause auto-play.
+    if slider_time != st.session_state.simulation_time:
+        st.session_state.simulation_time = slider_time
+        st.session_state.playing = False
 
-# Right column for charts side by side.
+# --- Layout: Chart Section (Side by Side) ---
 col_chart1, col_chart2 = st.columns(2)
-ph2 = col_chart1.empty()  # Placeholder for matplotlib chart.
-ph3 = col_chart2.empty()  # Placeholder for Plotly chart.
+matplotlib_placeholder = col_chart1.empty()  # Placeholder for matplotlib chart.
+plotly_placeholder = col_chart2.empty()      # Placeholder for Plotly chart.
 
-sum_p = st.empty()  # For counts and closest info.
-log_p = st.empty()  # For alerts.
+# Placeholders for additional information.
+status_placeholder = st.empty()  # For counts and closest drone info.
+alerts_placeholder = st.empty()  # For alerts.
 
 # --- Helper Functions ---
 def distance(p1, p2):
@@ -75,29 +80,29 @@ def plot_frame(t, three_d=False):
         ax.set_facecolor('#EAEAEA')
         ax.set_xlim(-600, 600)
         ax.set_ylim(-600, 600)
-        # Add concentric circles.
+        # Draw concentric circles.
         for r in (100, 250, 500):
-            c_circle = Circle((0, 0), r, fill=False, ls='--', color='gray', lw=1)
-            ax.add_patch(c_circle)
+            circle = Circle((0, 0), r, fill=False, ls='--', color='gray', lw=1)
+            ax.add_patch(circle)
             ax.text(r - 15, 0, f"{r}m", fontsize=8, color='gray')
         ax.set_title(f"Drone Tracker t={t}s", fontsize=14)
-        # Infantry markers.
+        # Plot infantry positions.
         for name, (ix, iy, iz) in infantry.items():
             ax.plot(ix, iy, 'ks', ms=8)
             ax.text(ix + 8, iy + 8, name, fontsize=8)
-        # Drone trails.
+        # Draw trails for each drone.
         for drone_id in df.id.unique():
             path = df[(df.id == drone_id) & (df.time <= t)].sort_values('time')
             if len(path) > 1:
                 c = COLORS[path.type.iloc[0]]
-                segment_alphas = np.linspace(0.2, 0.6, len(path) - 1)
+                alphas = np.linspace(0.2, 0.6, len(path) - 1)
                 for i in range(len(path) - 1):
                     x0, y0 = path.iloc[i][['x', 'y']]
                     x1, y1 = path.iloc[i + 1][['x', 'y']]
-                    ax.plot([x0, x1], [y0, y1], ls=':', color=c, alpha=segment_alphas[i])
+                    ax.plot([x0, x1], [y0, y1], ls=':', color=c, alpha=alphas[i])
         now = df[df.time == t]
         counts, events, seen = {}, [], set()
-        # Current drone positions.
+        # Plot current drone positions.
         for _, r in now.iterrows():
             counts[r.type] = counts.get(r.type, 0) + 1
             c = COLORS[r.type]
@@ -116,35 +121,43 @@ def plot_frame(t, three_d=False):
         hist = df[df.time <= t]
         counts, events = {}, []
 
-        # Drone trajectories in 3D.
+        # Add trajectories.
         for drone_id, path in hist.groupby("id"):
             c = COLORS[path["type"].iloc[0]]
             fig.add_trace(go.Scatter3d(
-                x=path["x"], y=path["y"], z=path["z"],
-                mode="lines", name=drone_id,
+                x=path["x"],
+                y=path["y"],
+                z=path["z"],
+                mode="lines",
+                name=drone_id,
                 line=dict(color=c, width=2)
             ))
-
-        # Current drone positions in 3D.
+        # Add current positions.
         for _, r in now.iterrows():
             counts[r.type] = counts.get(r.type, 0) + 1
             c = COLORS[r.type]
             fig.add_trace(go.Scatter3d(
-                x=[r.x], y=[r.y], z=[r.z],
+                x=[r.x],
+                y=[r.y],
+                z=[r.z],
                 mode="markers+text",
                 marker=dict(size=6, color=c),
-                text=[r.id], textposition="top center",
+                text=[r.id],
+                textposition="top center",
                 showlegend=False
             ))
             if r.type == "Shahed":
                 events.append(f"ALERT {r.id} at ({r.x:.0f},{r.y:.0f})")
-        # Infantry markers in 3D.
+        # Plot infantry markers.
         for name, (ix, iy, iz) in infantry.items():
             fig.add_trace(go.Scatter3d(
-                x=[ix], y=[iy], z=[iz],
+                x=[ix],
+                y=[iy],
+                z=[iz],
                 mode="markers+text",
                 marker=dict(symbol="square", size=6, color="black"),
-                text=[name], textposition="top center",
+                text=[name],
+                textposition="top center",
                 showlegend=False
             ))
         fig.update_layout(
@@ -160,49 +173,34 @@ def plot_frame(t, three_d=False):
         return fig, now, counts, events
 
 # --- Render Function ---
-def render(tt):
+def render(t):
     # Render the 2D matplotlib plot.
-    f2, fr, cnt, ev = plot_frame(tt, three_d=False)
-    ph2.pyplot(f2)
-    # Render the 3D plotly chart.
-    f3, *_ = plot_frame(tt, three_d=True)
-    ph3.plotly_chart(f3, use_container_width=True)
-
+    fig2d, frame2d, counts, events = plot_frame(t, three_d=False)
+    matplotlib_placeholder.pyplot(fig2d)
+    
+    # Render the 3D Plotly chart.
+    fig3d, *_ = plot_frame(t, three_d=True)
+    plotly_placeholder.plotly_chart(fig3d, use_container_width=True)
+    
     # Display counts and closest drone info.
-    lines = ["**Counts:**"] + [f"- {k}: {v}" for k, v in cnt.items()] + ["\n**Closest:**"]
+    info_lines = ["**Counts:**"] + [f"- {k}: {v}" for k, v in counts.items()] + ["\n**Closest:**"]
     for name, pos in infantry.items():
-        dmin, drone = float("inf"), "—"
-        for _, x in fr.iterrows():
-            d = distance((x.x, x.y, x.z), pos)
+        dmin, nearest = float("inf"), "—"
+        for _, row in frame2d.iterrows():
+            d = distance((row.x, row.y, row.z), pos)
             if d < dmin:
-                dmin, drone = d, f"{x.id}"
-        lines.append(f"- {name}: {drone} @ {dmin:.1f}m")
-    sum_p.markdown("\n".join(lines))
-    log_p.markdown("\n".join(f"- {e}" for e in ev) or "No alerts.")
+                dmin, nearest = d, row.id
+        info_lines.append(f"- {name}: {nearest} @ {dmin:.1f}m")
+    
+    status_placeholder.markdown("\n".join(info_lines))
+    alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
 
 # --- Main Simulation Logic ---
+current_time = st.session_state.simulation_time
+render(current_time)
 
-current_t = st.session_state.simulation_time
-render(current_t)
-
-# If auto play is enabled and the simulation time is below its maximum,
-# use Streamlit's autorefresh (which is more stable than experimental_rerun in a loop).
-if st.session_state.playing and current_t < df.time.max():
-    # st.experimental_autorefresh returns a counter so that the app auto-refreshes.
-    st.experimental_memo.clear()  # Optionally clear memo caches if needed.
-    st.experimental_data_editor  # Dummy usage to ensure rerun (no-op)
-    # refresh every 1000ms
+# If playing and simulation hasn't reached max time, wait and then rerun.
+if st.session_state.playing and current_time < df.time.max():
+    time.sleep(1)  # Adjust delay here if needed.
+    st.session_state.simulation_time = current_time + 1
     st.experimental_rerun()
-
-# Alternatively, if you prefer a delay-based auto update, you might uncomment the following block:
-# if st.session_state.playing:
-#     if current_t < df.time.max():
-#         time.sleep(1)
-#         st.session_state.simulation_time = current_t + 1
-#         try:
-#             st.experimental_rerun()
-#         except Exception:
-#             pass
-#     else:
-#         st.session_state.playing = False
-#         st.experimental_rerun()
