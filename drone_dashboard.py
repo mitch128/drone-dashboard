@@ -177,6 +177,8 @@ def render(t):
 def main():
     current_time = st.session_state.simulation_time
     render(current_time)
+
+    # Only rerun if playing AND within time range
     if st.session_state.playing and current_time < df.time.max():
         time.sleep(1)
         st.session_state.simulation_time = current_time + 1
