@@ -59,19 +59,20 @@ COLORS = {'Shahed':'red','DJI Mavic':'blue','Recon':'green'}
 def distance(a,b): return math.dist(a,b)
 
 # Compute projected impact if applicable
- def compute_impact(r, last):
+def compute_impact(r, last):
     # vector from last to current
     v = np.array([r.x - last.x, r.y - last.y, r.z - last.z])
-    if r.type == 'DJI Mavic' or np.linalg.norm(v[:2])<1e-1:
+    if r.type == 'DJI Mavic' or np.linalg.norm(v[:2]) < 1e-1:
         return None
     # avoid division by zero
-    if abs(v[2])<1e-2:
+    if abs(v[2]) < 1e-2:
         # project horizontally to z=0
         t_proj = r.z / 5.0
     else:
         t_proj = r.z / -v[2]
-    impact = np.array([r.x + v[0]*t_proj, r.y + v[1]*t_proj, 0])
+    impact = np.array([r.x + v[0] * t_proj, r.y + v[1] * t_proj, 0])
     return impact
+
 
 # Plotting
  def plot_frame(t, three_d=False):
