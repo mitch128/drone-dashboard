@@ -94,7 +94,7 @@ def plot_frame(t, three_d=False):
         for drone_id in df.id.unique():
             path = df[(df.id == drone_id) & (df.time <= t)].sort_values('time')
             if len(path) > 1:
-                                c = COLORS[path.type.iloc[0]]
+                c = COLORS[path.type.iloc[0]]
                 alphas = np.linspace(0.2, 0.6, len(path) - 1)
                 for i in range(len(path) - 1):
                     x0, y0 = path.iloc[i][['x', 'y']]
@@ -177,11 +177,11 @@ def render(t):
     # Render the 2D matplotlib plot.
     fig2d, frame2d, counts, events = plot_frame(t, three_d=False)
     matplotlib_placeholder.pyplot(fig2d)
-    
+
     # Render the 3D Plotly chart.
     fig3d, *_ = plot_frame(t, three_d=True)
     plotly_placeholder.plotly_chart(fig3d, use_container_width=True)
-    
+
     # Display counts and closest drone info.
     info_lines = ["**Counts:**"] + [f"- {k}: {v}" for k, v in counts.items()] + ["\n**Closest:**"]
     for name, pos in infantry.items():
@@ -191,9 +191,9 @@ def render(t):
             if d < dmin:
                 dmin, nearest = d, row.id
         info_lines.append(f"- {name}: {nearest} @ {dmin:.1f}m")
-    
+
     status_placeholder.markdown("\n".join(info_lines))
-        alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
+    alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
 
 # --- Main Simulation Logic ---
 def main():
@@ -208,5 +208,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
