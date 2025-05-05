@@ -40,7 +40,7 @@ if "playing" not in st.session_state:
     st.session_state.playing = False
 
 # --- Layout Controls ---
-# Left column for slider and play/pause button.
+# Left column for slider and play/pause checkbox.
 col_controls, col_charts = st.columns([1, 3])
 with col_controls:
     # Slider to adjust simulation time manually
@@ -51,11 +51,11 @@ with col_controls:
         value=st.session_state.simulation_time,
         key="time_slider"
     )
-    # Play/Pause toggle button
-    if st.button("Play" if not st.session_state.playing else "Pause"):
-        st.session_state.playing = not st.session_state.playing
-    # If slider is moved manually, update session state.
     st.session_state.simulation_time = user_t
+
+    # Checkbox to toggle auto play
+    auto_play = st.checkbox("Auto Play", value=st.session_state.playing)
+    st.session_state.playing = auto_play
 
 # Right column for charts side by side.
 col_chart1, col_chart2 = st.columns(2)
@@ -78,8 +78,8 @@ def plot_frame(t, three_d=False):
         ax.set_ylim(-600, 600)
         # Add concentric circles
         for r in (100, 250, 500):
-            c = Circle((0, 0), r, fill=False, ls='--', color='gray', lw=1)
-            ax.add_patch(c)
+            c_circle = Circle((0, 0), r, fill=False, ls='--', color='gray', lw=1)
+            ax.add_patch(c_circle)
             ax.text(r - 15, 0, f"{r}m", fontsize=8, color='gray')
         ax.set_title(f"Drone Tracker t={t}s", fontsize=14)
         # Infantry markers
@@ -187,13 +187,13 @@ def render(tt):
 t = st.session_state.simulation_time
 render(t)
 
-# If in play mode, increment time automatically.
+# If in auto play mode and time hasn't reached its max, increment time automatically.
 if st.session_state.playing:
     if t < df.time.max():
-        time.sleep(1)  # Pause for one second between frames
+        time.sleep(1)  # Adjust delay as needed between frames
         st.session_state.simulation_time = t + 1
         st.experimental_rerun()
     else:
-        # Stop the simulation when reaching the maximum time.
+        # Stop simulation when max time is reached.
         st.session_state.playing = False
         st.experimental_rerun()
