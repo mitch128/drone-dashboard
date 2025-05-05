@@ -40,14 +40,12 @@ def make_dummy_data(duration=120, fps=1, cam_fov_deg=90, img_size=(1280, 720)):
             if d['id'] == 'D1':
                 frac = min(t / duration, 1)
                 pos = d['start'] * (1-frac) + d['target'] * frac
-                # linear altitude drop
                 pos[2] = max(d['start'][2]*(1-frac), 0)
-                # wind drift noise
                 pos[:2] += np.array([np.sin(t/15), np.cos(t/20)]) * 5
             elif d['id'] == 'D2':
                 angle = 2*np.pi*(t % d['period'])/d['period']
                 pos = d['center'] + np.array([math.cos(angle), math.sin(angle), 0]) * d['radius']
-                pos[2] += 10 * math.sin(2*np.pi*t/30)
+                pos[2] = d['center'][2] + 10 * math.sin(2*np.pi*t/30)
             else:
                 angle = 2*np.pi*(t % d['period'])/d['period']
                 xy = d['center'][:2] + np.array([math.cos(angle), math.sin(angle)])*d['radius']
@@ -56,35 +54,31 @@ def make_dummy_data(duration=120, fps=1, cam_fov_deg=90, img_size=(1280, 720)):
 
         # simulate stereo detections for each camera
         for cam in ['L', 'R']:
-            offset_dir = -baseline/2 if cam=='L' else baseline/2
+            offset = -baseline/2 if cam=='L' else baseline/2
             for did, pos in true_positions.items():
-                # project to image plane
-                x_cam = pos[0] + offset_dir
+                x_cam = pos[0] + offset
                 y_cam = pos[1]
-                z_cam = pos[2] + 100  # camera height offset
-                # simple pinhole
+                z_cam = pos[2] + 100
                 u = focal * (x_cam / z_cam) + img_size[0]/2 + np.random.normal(0,5)
                 v = focal * (y_cam / z_cam) + img_size[1]/2 + np.random.normal(0,5)
-                # bounding box size inversely proportional to distance
                 size = np.clip(20000 / z_cam, 30, 200)
                 bbox = [u-size/2, v-size/2, u+size/2, v+size/2]
-                conf = np.clip(0.5 + (200/z_cam) + np.random.normal(0,0.05), 0, 1)
+                conf = float(np.clip(0.5 + (200/z_cam) + np.random.normal(0,0.05), 0, 1))
                 detections.append({'time': t, 'cam_id': cam, 'id': did,
                                    'bbox': bbox, 'conf': conf})
-        # triangulate between L and R
-        for did in true_positions:
-            detL = detections[-2*len(drone_defs) + list(true_positions).index(did)]
-            detR = detections[-len(drone_defs) + list(true_positions).index(did)]
-            # compute disparity
-            uL = np.mean(detL['bbox'][[0,2]])
-            uR = np.mean(detR['bbox'][[0,2]])
-            disp = (uL - uR)
-            if abs(disp) < 1e-2: disp = 1e-2
+        # triangulate between L and R for each drone
+        for i, did in enumerate(true_positions):
+            # each cam adds len(drone_defs) detections in order, so index offset
+            detL = detections[-2*len(drone_defs) + i]
+            detR = detections[-len(drone_defs) + i]
+            uL = np.mean([detL['bbox'][0], detL['bbox'][2]])
+            uR = np.mean([detR['bbox'][0], detR['bbox'][2]])
+            disp = uL - uR
+            disp = disp if abs(disp) > 1e-2 else 1e-2
             Z = focal * baseline / disp
             X = (uL - img_size[0]/2) * Z / focal
-            Y = (detL['bbox'][1] + detL['bbox'][3])/2 - img_size[1]/2
-            Y = Y * Z / focal
-            # add triangulation noise
+            v_center = (detL['bbox'][1] + detL['bbox'][3]) / 2
+            Y = (v_center - img_size[1]/2) * Z / focal
             pos3d = np.array([X, Y, Z-100]) + np.random.normal(0,2,3)
             tracks.append({'time': t, 'id': did,
                            'type': next(d['type'] for d in drone_defs if d['id']==did),
@@ -95,8 +89,7 @@ def make_dummy_data(duration=120, fps=1, cam_fov_deg=90, img_size=(1280, 720)):
 # Generate data
 detections_df, df = make_dummy_data(duration=120, fps=2)
 
-# Infantry positions (ground reference)
-infantry = {
+# Infantry positions\infantry = {
     'Alpha HQ': (0, 0, 0),
     'Bravo FOB': (200, 100, 0),
     'Charlie OP': (-150, -100, 0)
@@ -131,14 +124,12 @@ with tab2d:
     for r in [100,300,600]:
         fig2d.add_shape(type="circle", x0=-r,y0=-r,x1=r,y1=r,
                         line=dict(dash='dash',color='gray'))
-    
     for name,pos in infantry.items():
         fig2d.add_trace(go.Scatter(x=[pos[0]], y=[pos[1]], mode='markers+text',
                                    marker=dict(symbol='square',size=12), text=[name]))
     df_view = df[df.time<=current_t]
     for did, g in df_view.groupby('id'):
         fig2d.add_trace(go.Scatter(x=g.x, y=g.y, mode='lines', name=did))
-    
     st.plotly_chart(fig2d, use_container_width=True)
 
 with tab3d:
@@ -160,6 +151,6 @@ with tab_map:
 
 # Playback
 if play:
-    for t in range(current_t, duration+1, int(1/speed)):
+    for t in range(current_t, duration+1, max(1,int(1/speed))):
         time.sleep(1/speed)
         st.experimental_rerun()
