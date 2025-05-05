@@ -198,6 +198,7 @@ def main():
             st.experimental_rerun()
         else:
             st.session_state.playing = False
+            st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
