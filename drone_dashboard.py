@@ -55,7 +55,6 @@ infantry = {"Alpha HQ": (0,0,0), "Bravo FOB": (200,100,0), "Charlie OP": (-150,-
 COLORS = {'Shahed':'red','DJI Mavic':'blue','Recon':'green'}
 
 # Utility: distance
-
 def distance(a,b): return math.dist(a,b)
 
 # Compute projected impact if applicable
@@ -73,9 +72,8 @@ def compute_impact(r, last):
     impact = np.array([r.x + v[0] * t_proj, r.y + v[1] * t_proj, 0])
     return impact
 
-
 # Plotting
- def plot_frame(t, three_d=False):
+def plot_frame(t, three_d=False):
     # figure
     if three_d:
         fig = plt.figure(figsize=(7,7)); ax = fig.add_subplot(111, projection='3d')
@@ -150,14 +148,18 @@ def compute_impact(r, last):
 st.set_page_config(page_title="Drone Dashboard", layout="wide")
 st.title("Drone Intelligence Dashboard")
 st.sidebar.header("Controls")
-t_max = int(df.time.max());
+t_max = int(df.time.max())
 t = st.sidebar.slider("Time", 0, t_max, 0, 1)
-play = st.sidebar.button("Play ▶️"); spd = st.sidebar.number_input("Speed (s/frame)",0.1,5.0,1.0,0.1)
-col2,col3 = st.columns(2); ph2,ph3 = col2.empty(),col3.empty(); sum_p=st.sidebar.empty(); log_p=st.sidebar.empty()
+play = st.sidebar.button("Play ▶️")
+spd = st.sidebar.number_input("Speed (s/frame)", 0.1, 5.0, 1.0, 0.1)
+col2, col3 = st.columns(2)
+ph2, ph3 = col2.empty(), col3.empty()
+sum_p = st.sidebar.empty()
+log_p = st.sidebar.empty()
 
 def render(tt):
-    f2,now2,events = plot_frame(tt,three_d=False); ph2.pyplot(f2)
-    f3,_,_      = plot_frame(tt,three_d=True);  ph3.pyplot(f3)
+    f2, now2, events = plot_frame(tt, three_d=False); ph2.pyplot(f2)
+    f3, _, _ = plot_frame(tt, three_d=True); ph3.pyplot(f3)
     # summary
     counts = now2.type.value_counts().to_dict()
     lines = ["**Counts:**"] + [f"- {k}: {v}" for k,v in counts.items()] + ["\n**Events:**"] + ([f"- {e}" for e in events] or ["- No alerts."])
@@ -172,6 +174,8 @@ def render(tt):
     log_p.markdown("\n".join(dlines))
 
 if play:
-    for tt in range(t, t_max+1): render(tt); time.sleep(spd)
+    for tt in range(t, t_max+1): 
+        render(tt)
+        time.sleep(spd)
 else:
     render(t)
