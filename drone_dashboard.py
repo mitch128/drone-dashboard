@@ -10,7 +10,14 @@ import plotly.graph_objects as go
 
 # --- Realistic Dummy Data Generation with Simulated YOLO Detections ---
 @st.cache_data
-def make_dummy_data(duration=120, cam_fov_deg=90, img_size=(1280, 720)):
+def make_dummy_data(duration=120, fps=2, cam_fov_deg=90, img_size=(1280, 720)):
+    """
+    Simulate stereo camera YOLO detections and triangulate to 3D positions.
+    Uses integer-second timestamps (with given fps) for clear slider alignment.
+    Returns:
+      detections_df: DataFrame of raw camera detections
+      tracks_df: DataFrame of 3D drone tracks
+    """
     """
     Simulate stereo camera YOLO detections and triangulate to 3D positions.
     Uses integer-second timestamps for clear slider alignment.
