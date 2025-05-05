@@ -187,17 +187,20 @@ def render(t):
     alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
 
 # --- Main Simulation Logic ---
+# Main Simulation Logic
 def main():
     current_time = st.session_state.simulation_time
     render(current_time)
 
+    # Continue simulation if playing and we haven't reached the end.
     if st.session_state.playing:
         if current_time < df.time.max():
-            time.sleep(0.3)  # Smooth playback
-            st.session_state.simulation_time += 1
+            time.sleep(0.3)  # Delay for smooth playback
+            st.session_state.simulation_time = current_time + 1
             st.experimental_rerun()
         else:
-            st.session_state.playing = False  # Stop at the end
+            st.session_state.playing = False  # Stop playing at the end
 
 if __name__ == "__main__":
     main()
+
