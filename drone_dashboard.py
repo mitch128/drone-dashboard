@@ -178,11 +178,13 @@ def main():
     current_time = st.session_state.simulation_time
     render(current_time)
 
-    # Only rerun if playing AND within time range
-    if st.session_state.playing and current_time < df.time.max():
-        time.sleep(1)
-        st.session_state.simulation_time = current_time + 1
-        st.experimental_rerun()
+    # SAFE PLAY LOGIC WITH BOUNDARY CHECK
+    if st.session_state.playing:
+        if current_time < df.time.max():
+            time.sleep(1)
+            st.session_state.simulation_time += 1
+            st.experimental_rerun()
+        else:
+            # Stop playing at end of simulation
+            st.session_state.playing = False
 
-if __name__ == "__main__":
-    main()
