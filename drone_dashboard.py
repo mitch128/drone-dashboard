@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from math import sqrt
 import plotly.graph_objects as go
-import time
 
 # --- Constants ---
 COLORS = {'Orlan': 'orange', 'Shahed': 'red', 'Zala': 'green'}
@@ -45,7 +44,6 @@ with col_controls:
     st.write(f"Current time: **{st.session_state.simulation_time}** sec")
     if st.button("Play" if not st.session_state.playing else "Pause"):
         st.session_state.playing = not st.session_state.playing
-        print(f"Playing state changed to: {st.session_state.playing}")
 
     slider_time = st.slider(
         "Set Simulation Time (seconds)",
@@ -57,7 +55,6 @@ with col_controls:
     if slider_time != st.session_state.simulation_time:
         st.session_state.simulation_time = slider_time
         st.session_state.playing = False
-        print(f"Slider time changed to: {st.session_state.simulation_time}")
 
 # --- Layout: Chart Section (Side by Side) ---
 col_chart1, col_chart2 = st.columns(2)
@@ -192,17 +189,14 @@ def render(t):
 def main():
     current_time = st.session_state.simulation_time
     render(current_time)
-    print(f"Rendered time: {current_time}")
 
     # Auto-play logic with protection
     if st.session_state.playing:
         if current_time < df.time.max():
             st.session_state.simulation_time += 1
-            print(f"Incrementing time to: {st.session_state.simulation_time}")
             st.rerun()
         else:
             st.session_state.playing = False
-            print("Simulation ended. Setting playing to False.")
             st.rerun()
 
 if __name__ == "__main__":
