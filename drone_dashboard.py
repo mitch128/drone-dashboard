@@ -10,15 +10,16 @@ import plotly.graph_objects as go
 
 # --- Realistic Dummy Data Generation with Simulated YOLO Detections ---
 @st.cache_data
-def make_dummy_data(duration=120, fps=2, cam_fov_deg=90, img_size=(1280, 720)):
+def make_dummy_data(duration=120, cam_fov_deg=90, img_size=(1280, 720)):
     """
     Simulate stereo camera YOLO detections and triangulate to 3D positions.
+    Uses integer-second timestamps for clear slider alignment.
     Returns:
       detections_df: DataFrame of raw camera detections
       tracks_df: DataFrame of 3D drone tracks
     """
     np.random.seed(2025)
-    times = np.linspace(0, duration, int(duration * fps) + 1)
+    times = np.arange(0, duration + 1, 1, dtype=int)  # integer seconds
     drone_defs = [
         {'id': 'D1', 'type': 'Shahed Missile',
          'start': np.array([-1000., 800., 1000.]), 'target': np.array([200., 100., 0.])},
@@ -49,7 +50,7 @@ def make_dummy_data(duration=120, fps=2, cam_fov_deg=90, img_size=(1280, 720)):
                 pos = np.array([xy[0], xy[1], d['center'][2]])
             true_positions[d['id']] = pos
 
-        # YOLO detections
+        # YOLO detections for each camera
         for cam in ['L', 'R']:
             offset = -baseline / 2 if cam == 'L' else baseline / 2
             for did, pos in true_positions.items():
@@ -78,9 +79,6 @@ def make_dummy_data(duration=120, fps=2, cam_fov_deg=90, img_size=(1280, 720)):
 
     detections_df = pd.DataFrame(detections)
     tracks_df = pd.DataFrame(tracks)
-    # Round times to int
-    detections_df['time'] = detections_df['time'].round().astype(int)
-    tracks_df['time'] = tracks_df['time'].round().astype(int)
     return detections_df, tracks_df
 
 # Generate data
