@@ -9,7 +9,6 @@ import math
 from scipy.interpolate import CubicSpline
 import folium
 from streamlit_folium import folium_static
-pip install scipy
 
 #######################################
 # 1. Generate More Realistic Dummy Drone Data in 3D
