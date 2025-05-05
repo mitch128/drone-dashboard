@@ -42,12 +42,9 @@ if "playing" not in st.session_state:
 # --- Layout: Controls Section ---
 col_controls, col_charts = st.columns([1, 3])
 with col_controls:
-    # Display current simulation time.
     st.write(f"Current time: **{st.session_state.simulation_time}** sec")
-    # Single play/pause button.
     if st.button("Play" if not st.session_state.playing else "Pause"):
         st.session_state.playing = not st.session_state.playing
-    # Slider to manually adjust simulation time.
     slider_time = st.slider(
         "Set Simulation Time (seconds)",
         min_value=0,
@@ -55,19 +52,16 @@ with col_controls:
         value=st.session_state.simulation_time,
         key="time_slider"
     )
-    # If slider was used, update time and pause auto-play.
     if slider_time != st.session_state.simulation_time:
         st.session_state.simulation_time = slider_time
         st.session_state.playing = False
 
-# --- Layout: Chart Section (Side by Side) ---
+# --- Layout: Chart Section ---
 col_chart1, col_chart2 = st.columns(2)
-matplotlib_placeholder = col_chart1.empty()  # Placeholder for matplotlib chart.
-plotly_placeholder = col_chart2.empty()      # Placeholder for Plotly chart.
-
-# Placeholders for additional information.
-status_placeholder = st.empty()  # For counts and closest drone info.
-alerts_placeholder = st.empty()  # For alerts.
+matplotlib_placeholder = col_chart1.empty()
+plotly_placeholder = col_chart2.empty()
+status_placeholder = st.empty()
+alerts_placeholder = st.empty()
 
 # --- Helper Functions ---
 def distance(p1, p2):
@@ -75,22 +69,18 @@ def distance(p1, p2):
 
 def plot_frame(t, three_d=False):
     if not three_d:
-        # 2D Matplotlib Plot.
         fig, ax = plt.subplots(figsize=(7, 7))
         ax.set_facecolor('#EAEAEA')
         ax.set_xlim(-600, 600)
         ax.set_ylim(-600, 600)
-        # Draw concentric circles.
         for r in (100, 250, 500):
             circle = Circle((0, 0), r, fill=False, ls='--', color='gray', lw=1)
             ax.add_patch(circle)
             ax.text(r - 15, 0, f"{r}m", fontsize=8, color='gray')
         ax.set_title(f"Drone Tracker t={t}s", fontsize=14)
-        # Plot infantry positions.
         for name, (ix, iy, iz) in infantry.items():
             ax.plot(ix, iy, 'ks', ms=8)
             ax.text(ix + 8, iy + 8, name, fontsize=8)
-        # Draw trails for each drone.
         for drone_id in df.id.unique():
             path = df[(df.id == drone_id) & (df.time <= t)].sort_values('time')
             if len(path) > 1:
@@ -102,7 +92,6 @@ def plot_frame(t, three_d=False):
                     ax.plot([x0, x1], [y0, y1], ls=':', color=c, alpha=alphas[i])
         now = df[df.time == t]
         counts, events, seen = {}, [], set()
-        # Plot current drone positions.
         for _, r in now.iterrows():
             counts[r.type] = counts.get(r.type, 0) + 1
             c = COLORS[r.type]
@@ -115,13 +104,10 @@ def plot_frame(t, three_d=False):
         ax.legend(loc='upper left', fontsize=8)
         return fig, now, counts, events
     else:
-        # 3D Plotly Plot.
         fig = go.Figure()
         now = df[df.time == t]
         hist = df[df.time <= t]
         counts, events = {}, []
-
-        # Add trajectories.
         for drone_id, path in hist.groupby("id"):
             c = COLORS[path["type"].iloc[0]]
             fig.add_trace(go.Scatter3d(
@@ -132,7 +118,6 @@ def plot_frame(t, three_d=False):
                 name=drone_id,
                 line=dict(color=c, width=2)
             ))
-        # Add current positions.
         for _, r in now.iterrows():
             counts[r.type] = counts.get(r.type, 0) + 1
             c = COLORS[r.type]
@@ -148,7 +133,6 @@ def plot_frame(t, three_d=False):
             ))
             if r.type == "Shahed":
                 events.append(f"ALERT {r.id} at ({r.x:.0f},{r.y:.0f})")
-        # Plot infantry markers.
         for name, (ix, iy, iz) in infantry.items():
             fig.add_trace(go.Scatter3d(
                 x=[ix],
@@ -174,15 +158,10 @@ def plot_frame(t, three_d=False):
 
 # --- Render Function ---
 def render(t):
-    # Render the 2D matplotlib plot.
     fig2d, frame2d, counts, events = plot_frame(t, three_d=False)
     matplotlib_placeholder.pyplot(fig2d)
-
-    # Render the 3D Plotly chart.
     fig3d, *_ = plot_frame(t, three_d=True)
     plotly_placeholder.plotly_chart(fig3d, use_container_width=True)
-
-    # Display counts and closest drone info.
     info_lines = ["**Counts:**"] + [f"- {k}: {v}" for k, v in counts.items()] + ["\n**Closest:**"]
     for name, pos in infantry.items():
         dmin, nearest = float("inf"), "—"
@@ -191,7 +170,6 @@ def render(t):
             if d < dmin:
                 dmin, nearest = d, row.id
         info_lines.append(f"- {name}: {nearest} @ {dmin:.1f}m")
-
     status_placeholder.markdown("\n".join(info_lines))
     alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
 
@@ -199,10 +177,8 @@ def render(t):
 def main():
     current_time = st.session_state.simulation_time
     render(current_time)
-
-    # If playing and simulation hasn't reached max time, wait and then rerun.
     if st.session_state.playing and current_time < df.time.max():
-        time.sleep(1)  # Adjust delay here if needed.
+        time.sleep(1)
         st.session_state.simulation_time = current_time + 1
         st.experimental_rerun()
 
