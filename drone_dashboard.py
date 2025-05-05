@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl\_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import Axes3D
 import time, math
 
 # --- Dummy Data Generation ---
