@@ -194,7 +194,6 @@ def main():
     # Auto-play logic with protection
     if st.session_state.playing:
         if current_time < df.time.max():
-            time.sleep(1)
             st.session_state.simulation_time += 1
             st.experimental_rerun()
         else:
