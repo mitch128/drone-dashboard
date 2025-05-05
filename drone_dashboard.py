@@ -1,11 +1,11 @@
 import streamlit as st
-st.set_page_config(page_title="Drone Dashboard", layout="wide")
-
 import pandas as pd
 import numpy as np
 import math
 import pydeck as pdk
 import plotly.graph_objects as go
+
+st.set_page_config(page_title="Drone Dashboard", layout="wide")
 
 # --- Realistic Dummy Data Generation with Simulated YOLO Detections ---
 @st.cache_data
@@ -69,12 +69,9 @@ def make_dummy_data(duration=120, fps=2, cam_fov_deg=90, img_size=(1280, 720)):
             tracks.append({'time': t, 'id': did, 'type': next(d['type'] for d in drone_defs if d['id'] == did),
                            'x': pos3d[0], 'y': pos3d[1], 'z': pos3d[2]})
 
-    returns = pd.DataFrame(detections), pd.DataFrame(tracks)
-    return returns
+    return pd.DataFrame(detections), pd.DataFrame(tracks)
 
 # Generate data
-
-# Use clear variable names
 detections_df, tracks_df = make_dummy_data(duration=120, fps=2)
 
 # Infantry ground positions
@@ -159,5 +156,3 @@ with tab3d:
     st.plotly_chart(render_3d(current_t), use_container_width=True)
 with tab_map:
     st.pydeck_chart(render_map(current_t))
-
-# End of app
