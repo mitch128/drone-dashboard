@@ -83,7 +83,7 @@ def plot_radar_frame(t):
         # Count each drone type
         drone_info[row['type']] = drone_info.get(row['type'], 0) + 1
 
-        # Select colors
+        # Select colors based on drone type
         if row['type'] == 'Shahed':    # High threat attack drone – red
             color = 'red'
         elif row['type'] == 'DJI Mavic':  # Recon drone – blue
@@ -117,12 +117,11 @@ with col1:
     t_slider = st.slider("Select Time (s)", 0, int(df.time.max()), 0, 1, key='time_slider')
     play = st.button("Play Live Simulation")
     
-# Placeholder for the radar plot
+# Placeholders for the radar plot and summary information
 plot_placeholder = st.empty()
-# Placeholder for summary information
 summary_placeholder = st.empty()
 
-# Generate summary stats based on current frame and infantry positions
+# Generate summary statistics based on the current frame and infantry positions
 def generate_summary(frame, drone_info):
     summary_lines = []
     summary_lines.append("### Battlefield Summary")
@@ -160,10 +159,10 @@ if play:
         fig, frame, drone_info = plot_radar_frame(t)
         plot_placeholder.pyplot(fig)
         summary_placeholder.markdown(generate_summary(frame, drone_info))
-        time.sleep(1)  # Pause for a 1-second update interval (can be adjusted based on real-time requirements)
-    st.session_state.time_slider = max_time
+        time.sleep(1)  # Pause for a 1-second update interval (adjust as required)
+    st.session_state["time_slider"] = max_time  # Using dictionary syntax to update session_state
 else:
-    # Manual control via the slider
+    # When not playing, simply update based on the slider value.
     fig, frame, drone_info = plot_radar_frame(t_slider)
     plot_placeholder.pyplot(fig)
     summary_placeholder.markdown(generate_summary(frame, drone_info))
