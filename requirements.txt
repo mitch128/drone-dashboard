@@ -1,7 +1,8 @@
 streamlit
 pandas
-matplotlib
 numpy
-plotly
+matplotlib
 scipy
 folium
+streamlit-folium
+plotly
