@@ -1,4 +1,6 @@
 import streamlit as st
+st.set_page_config(page_title="Drone Dashboard", layout="wide")
+
 import pandas as pd
 import numpy as np
 import math
@@ -34,7 +36,6 @@ def make_dummy_data(duration=120, fps=2, cam_fov_deg=90, img_size=(1280, 720)):
     focal = img_size[0] / (2 * math.tan(math.radians(cam_fov_deg / 2)))
 
     for t in times:
-        # Compute true positions
         true_positions = {}
         for d in drone_defs:
             if d['id'] == 'D1':
@@ -67,7 +68,7 @@ def make_dummy_data(duration=120, fps=2, cam_fov_deg=90, img_size=(1280, 720)):
                 detections.append({'time': t, 'cam_id': cam, 'id': did,
                                    'bbox': bbox, 'conf': conf})
         # Triangulate detections into 3D
-        for i, (did, pos) in enumerate(true_positions.items()):
+        for i, (did, _) in enumerate(true_positions.items()):
             detL = detections[-2 * len(drone_defs) + i]
             detR = detections[-len(drone_defs) + i]
             uL = (detL['bbox'][0] + detL['bbox'][2]) / 2
@@ -82,13 +83,10 @@ def make_dummy_data(duration=120, fps=2, cam_fov_deg=90, img_size=(1280, 720)):
                            'type': next(d['type'] for d in drone_defs if d['id'] == did),
                            'x': pos3d[0], 'y': pos3d[1], 'z': pos3d[2]})
 
-    detections_df = pd.DataFrame(detections)
-    tracks_df = pd.DataFrame(tracks)
-    return detections_df, tracks_df
+    return pd.DataFrame(detections), pd.DataFrame(tracks)
 
 # Generate data
-nd = make_dummy_data(duration=120, fps=2)
-detections_df, df = nd
+detections_df, df = make_dummy_data(duration=120, fps=2)
 
 # Ground positions for infantry
 infantry = {
@@ -105,8 +103,7 @@ def compute_impact(row, prev_row):
     t_fall = math.sqrt(2 * dz / 9.81)
     return np.array([row.x + v[0] * t_fall, row.y + v[1] * t_fall, 0])
 
-# Streamlit App Setup
-st.set_page_config(page_title="Drone Dashboard", layout="wide")
+# Streamlit App UI
 st.title("🚁 Drone Tracking & Threat Visualization")
 
 # Controls
@@ -124,16 +121,13 @@ tab2d, tab3d, tab_map = st.tabs(["2D Radar", "3D View", "Map View"])
 
 with tab2d:
     fig2d = go.Figure()
-    # Concentric rings
     for r in [100, 300, 600]:
         fig2d.add_shape(type="circle", x0=-r, y0=-r, x1=r, y1=r,
                         line=dict(dash='dash', color='gray'))
-    # Infantry markers
     for name, pos in infantry.items():
         fig2d.add_trace(go.Scatter(x=[pos[0]], y=[pos[1]], mode='markers+text',
                                    marker=dict(symbol='square', size=12, color='black'),
                                    text=[name], textposition='top right'))
-    # Drone paths
     df_view = df[df.time <= current_t]
     for did, g in df_view.groupby('id'):
         fig2d.add_trace(go.Scatter(x=g.x, y=g.y, mode='lines', name=did))
@@ -165,6 +159,6 @@ with tab_map:
 
 # Auto-play
 if play:
-    for t in range(current_t, duration + 1, 1):
+    for t in range(current_t, duration + 1):
         time.sleep(1 / speed)
         st.experimental_rerun()
