@@ -1,194 +1,165 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import time, math
+import math
+import time
+from datetime import timedelta
+import pydeck as pdk
+import plotly.graph_objects as go
 
-# --- Dummy Data Generation ---
-
+# --- Realistic Dummy Data Generation with Simulated YOLO Detections ---
 @st.cache_data
-def make_dummy_data():
-    np.random.seed(42)
-    times = np.arange(0, 61)  # simulate 1 minute at 1s intervals
-    rows = []
-    # Define waypoints and behavior per drone
-    # D1: Shahed missile: straight approach towards Bravo FOB
-    start1 = np.array([-500, -400, 150])
-    target1 = np.array([200, 100, 0])  # Bravo FOB
-    v1 = (target1 - start1) / times[-1]
-    # D2: DJI Mavic: random walk with hover segments
-    pos2 = np.array([100.0, 150.0, 60.0])
-    hover_times = set(np.random.choice(times, size=10, replace=False))
-    # D3: Recon UAV: patrol circle centered on Charlie OP
-    center3 = np.array([-150, -100, 0])
-    radius3 = 100
-    ang_rate3 = 2 * np.pi / times[-1]
+def make_dummy_data(duration=120, fps=1, cam_fov_deg=90, img_size=(1280, 720)):
+    """
+    Simulate stereo camera YOLO detections followed by triangulation to 3D positions.
+    Returns:
+      - detections: DataFrame of raw camera detections (time, cam_id, bbox, conf, id)
+      - tracks_3d: DataFrame of triangulated drone positions (time, id, type, x, y, z)
+    """
+    np.random.seed(2025)
+    times = np.arange(0, duration+1, 1/fps)
+    drone_defs = [
+        {'id': 'D1', 'type': 'Shahed Missile',
+         'start': np.array([-1000., 800., 1000.]), 'target': np.array([200., 100., 0.]), 'speed': 250.0},
+        {'id': 'D2', 'type': 'DJI Mavic',
+         'center': np.array([150., -200., 50.]), 'radius': 100., 'period': 60.0},
+        {'id': 'D3', 'type': 'Recon UAV',
+         'center': np.array([-150., -100., 300.]), 'radius': 200., 'period': 180.0},
+    ]
+    detections = []
+    tracks = []
+
+    # stereo camera baseline (meters)
+    baseline = 1.0
+    focal = img_size[0] / (2 * math.tan(math.radians(cam_fov_deg/2)))
 
     for t in times:
-        # Shahed
-        pos1 = start1 + v1 * t + np.random.normal(0, 3, 3)
-        rows.append(dict(time=t, id='D1', type='Shahed',
-                         x=pos1[0], y=pos1[1], z=max(pos1[2], 5)))
-        # DJI Mavic
-        if t in hover_times:
-            pos2 += np.random.normal(0, 0.5, 3)
-        else:
-            theta = np.random.uniform(0, 2*np.pi)
-            step = np.array([np.cos(theta), np.sin(theta), np.random.uniform(-0.2, 0.2)]) * 2
-            pos2 += step
-        pos2[2] = np.clip(pos2[2], 20, 120)
-        rows.append(dict(time=t, id='D2', type='DJI Mavic',
-                         x=pos2[0], y=pos2[1], z=pos2[2]))
-        # Recon
-        theta3 = ang_rate3 * t
-        x3 = center3[0] + radius3 * np.cos(theta3) + np.random.normal(0, 2)
-        y3 = center3[1] + radius3 * np.sin(theta3) + np.random.normal(0, 2)
-        z3 = 200 + np.random.normal(0, 5)
-        rows.append(dict(time=t, id='D3', type='Recon',
-                         x=x3, y=y3, z=z3))
+        true_positions = {}
+        # generate true positions for each drone
+        for d in drone_defs:
+            if d['id'] == 'D1':
+                frac = min(t / duration, 1)
+                pos = d['start'] * (1-frac) + d['target'] * frac
+                # linear altitude drop
+                pos[2] = max(d['start'][2]*(1-frac), 0)
+                # wind drift noise
+                pos[:2] += np.array([np.sin(t/15), np.cos(t/20)]) * 5
+            elif d['id'] == 'D2':
+                angle = 2*np.pi*(t % d['period'])/d['period']
+                pos = d['center'] + np.array([math.cos(angle), math.sin(angle), 0]) * d['radius']
+                pos[2] += 10 * math.sin(2*np.pi*t/30)
+            else:
+                angle = 2*np.pi*(t % d['period'])/d['period']
+                xy = d['center'][:2] + np.array([math.cos(angle), math.sin(angle)])*d['radius']
+                pos = np.array([xy[0], xy[1], d['center'][2]])
+            true_positions[d['id']] = pos
 
-    return pd.DataFrame(rows)
+        # simulate stereo detections for each camera
+        for cam in ['L', 'R']:
+            offset_dir = -baseline/2 if cam=='L' else baseline/2
+            for did, pos in true_positions.items():
+                # project to image plane
+                x_cam = pos[0] + offset_dir
+                y_cam = pos[1]
+                z_cam = pos[2] + 100  # camera height offset
+                # simple pinhole
+                u = focal * (x_cam / z_cam) + img_size[0]/2 + np.random.normal(0,5)
+                v = focal * (y_cam / z_cam) + img_size[1]/2 + np.random.normal(0,5)
+                # bounding box size inversely proportional to distance
+                size = np.clip(20000 / z_cam, 30, 200)
+                bbox = [u-size/2, v-size/2, u+size/2, v+size/2]
+                conf = np.clip(0.5 + (200/z_cam) + np.random.normal(0,0.05), 0, 1)
+                detections.append({'time': t, 'cam_id': cam, 'id': did,
+                                   'bbox': bbox, 'conf': conf})
+        # triangulate between L and R
+        for did in true_positions:
+            detL = detections[-2*len(drone_defs) + list(true_positions).index(did)]
+            detR = detections[-len(drone_defs) + list(true_positions).index(did)]
+            # compute disparity
+            uL = np.mean(detL['bbox'][[0,2]])
+            uR = np.mean(detR['bbox'][[0,2]])
+            disp = (uL - uR)
+            if abs(disp) < 1e-2: disp = 1e-2
+            Z = focal * baseline / disp
+            X = (uL - img_size[0]/2) * Z / focal
+            Y = (detL['bbox'][1] + detL['bbox'][3])/2 - img_size[1]/2
+            Y = Y * Z / focal
+            # add triangulation noise
+            pos3d = np.array([X, Y, Z-100]) + np.random.normal(0,2,3)
+            tracks.append({'time': t, 'id': did,
+                           'type': next(d['type'] for d in drone_defs if d['id']==did),
+                           'x': pos3d[0], 'y': pos3d[1], 'z': pos3d[2]})
 
-# Load data
-df = make_dummy_data()
+    return pd.DataFrame(detections), pd.DataFrame(tracks)
+
+# Generate data
+detections_df, df = make_dummy_data(duration=120, fps=2)
+
+# Infantry positions (ground reference)
 infantry = {
-    "Alpha HQ": (0, 0, 0),
-    "Bravo FOB": (200, 100, 0),
-    "Charlie OP": (-150, -100, 0)
+    'Alpha HQ': (0, 0, 0),
+    'Bravo FOB': (200, 100, 0),
+    'Charlie OP': (-150, -100, 0)
 }
-COLORS = {'Shahed': 'red', 'DJI Mavic': 'blue', 'Recon': 'green'}
 
-# Utility: distance
-def distance(a, b):
-    return math.dist(a, b)
-
-# Compute projected impact if applicable
-def compute_impact(r, last):
-    v = np.array([r.x - last.x, r.y - last.y, r.z - last.z])
-    if r.type == 'DJI Mavic' or np.linalg.norm(v[:2]) < 1e-1:
+def compute_impact(row, prev_row):
+    v = np.array([row.x - prev_row.x, row.y - prev_row.y, row.z - prev_row.z])
+    if np.linalg.norm(v) < 1:
         return None
-    if abs(v[2]) < 1e-2:
-        t_proj = r.z / 5.0
-    else:
-        t_proj = r.z / -v[2]
-    impact = np.array([r.x + v[0] * t_proj, r.y + v[1] * t_proj, 0])
-    return impact
+    dz = row.z
+    t_fall = math.sqrt(2*dz/9.81)
+    return np.array([row.x + v[0]*t_fall, row.y + v[1]*t_fall, 0])
 
-# Plotting
-def plot_frame(t, three_d=False):
-    if three_d:
-        fig = plt.figure(figsize=(7, 7))
-        ax = fig.add_subplot(111, projection='3d')
-    else:
-        fig, ax = plt.subplots(figsize=(7, 7))
-        ax.set_facecolor('#EAEAEA')
-        ax.set_xlim(-600, 600)
-        ax.set_ylim(-600, 600)
-        for r in (100, 250, 500):
-            c = plt.Circle((0, 0), r, fill=False, ls='--', color='gray', lw=1)
-            ax.add_patch(c)
-            ax.text(r - 15, 0, f"{r}m", fontsize=8, color='gray')
-
-    ax.set_title(f"Drone Tracker t={t}s", fontsize=14)
-
-    for name, (ix, iy, iz) in infantry.items():
-        if three_d:
-            ax.scatter(ix, iy, iz, c='k', marker='s', s=60)
-            ax.text(ix, iy, iz, name, fontsize=8)
-        else:
-            ax.plot(ix, iy, 'ks', ms=8)
-            ax.text(ix + 8, iy + 8, name, fontsize=8)
-
-    for drone_id in df.id.unique():
-        path = df[(df.id == drone_id) & (df.time <= t)].sort_values('time')
-        if len(path) > 1:
-            c = COLORS[path.type.iloc[0]]
-            if three_d:
-                ax.plot(path.x, path.y, path.z, ls=':', color=c, alpha=0.5)
-            else:
-                ax.plot(path.x, path.y, ls=':', color=c, alpha=0.5)
-
-    now = df[df.time == t]
-    events = []
-    seen = set()
-    for _, r in now.iterrows():
-        c = COLORS[r.type]
-        if three_d:
-            ax.scatter(r.x, r.y, r.z, c=c, s=80, label=r.type if r.type not in seen else "")
-            ax.text(r.x, r.y, r.z, f"{r.id}", fontsize=7)
-        else:
-            ax.plot(r.x, r.y, 'o', c=c, ms=8, label=r.type if r.type not in seen else "")
-            ax.text(r.x + 5, r.y + 5, f"{r.id}", fontsize=7)
-        seen.add(r.type)
-
-        last = df[(df.id == r.id) & (df.time == t - 1)].iloc[0] if t > 0 else r
-        impact = compute_impact(r, last)
-        if impact is not None:
-            if three_d:
-                theta = np.linspace(0, 2 * np.pi, 50)
-                x_c = impact[0] + 20 * np.cos(theta)
-                y_c = impact[1] + 20 * np.sin(theta)
-                z_c = np.zeros_like(theta)
-                ax.plot(x_c, y_c, z_c, ls='--', alpha=0.7)
-            else:
-                circle = plt.Circle((impact[0], impact[1]), 20, fill=False, ls='--', alpha=0.7)
-                ax.add_patch(circle)
-
-        if r.type == 'Shahed':
-            events.append(f"ALERT {r.id} at ({r.x:.0f},{r.y:.0f})")
-            if three_d:
-                ax.quiver(r.x, r.y, r.z, 50, 40, 0, color=c, alpha=0.5)
-            else:
-                ax.arrow(r.x, r.y, 50, 40, head_width=5, head_length=5, fc=c, ec=c, alpha=0.5)
-
-    if not three_d:
-        ax.legend(loc='upper left', fontsize=8)
-    else:
-        ax.set_xlim(-600, 600)
-        ax.set_ylim(-600, 600)
-        ax.set_zlim(0, 500)
-        ax.legend(loc='upper left', fontsize=8)
-
-    return fig, now, events
-
-# Streamlit UI
+# Streamlit App
 st.set_page_config(page_title="Drone Dashboard", layout="wide")
-st.title("Drone Intelligence Dashboard")
-st.sidebar.header("Controls")
+st.title("🚁 Drone Tracking & Threat Visualization")
 
-t_max = int(df.time.max())
-t = st.sidebar.slider("Time", 0, t_max, 0, 1)
-play = st.sidebar.button("Play ▶️")
-spd = st.sidebar.number_input("Speed (s/frame)", 0.1, 5.0, 1.0, 0.1)
+duration = int(df.time.max())
+current_t = st.sidebar.slider("Time (s)", 0, duration, 0)
+play = st.sidebar.button("▶️ Play")
+speed = st.sidebar.slider("Speed (fps)", 1, 5, 2)
 
-col2, col3 = st.columns(2)
-ph2, ph3 = col2.empty(), col3.empty()
-sum_p = st.sidebar.empty()
-log_p = st.sidebar.empty()
+# Display raw detections
+st.sidebar.subheader("Sample Detections")
+st.sidebar.dataframe(detections_df[detections_df.time==current_t].drop('time', axis=1))
 
-def render(tt):
-    f2, now2, events = plot_frame(tt, three_d=False)
-    ph2.pyplot(f2)
-    f3, _, _ = plot_frame(tt, three_d=True)
-    ph3.pyplot(f3)
+# 2D Radar View
+tab2d, tab3d, tab_map = st.tabs(["2D Radar", "3D View", "Map View"])
 
-    counts = now2.type.value_counts().to_dict()
-    lines = ["**Counts:**"] + [f"- {k}: {v}" for k, v in counts.items()] \
-            + ["\n**Events:**"] + ([f"- {e}" for e in events] or ["- No alerts."])
-    sum_p.markdown("\n".join(lines))
+with tab2d:
+    fig2d = go.Figure()
+    for r in [100,300,600]:
+        fig2d.add_shape(type="circle", x0=-r,y0=-r,x1=r,y1=r,
+                        line=dict(dash='dash',color='gray'))
+    
+    for name,pos in infantry.items():
+        fig2d.add_trace(go.Scatter(x=[pos[0]], y=[pos[1]], mode='markers+text',
+                                   marker=dict(symbol='square',size=12), text=[name]))
+    df_view = df[df.time<=current_t]
+    for did, g in df_view.groupby('id'):
+        fig2d.add_trace(go.Scatter(x=g.x, y=g.y, mode='lines', name=did))
+    
+    st.plotly_chart(fig2d, use_container_width=True)
 
-    dlines = ["\n**Closest:**"]
-    for name, pos in infantry.items():
-        df_now = now2.copy()
-        df_now['dist'] = df_now.apply(lambda r: distance((r.x, r.y, r.z), pos), axis=1)
-        row = df_now.loc[df_now.dist.idxmin()]
-        dlines.append(f"- {name}: {row.id} @ {row.dist:.1f}m")
-    log_p.markdown("\n".join(dlines))
+with tab3d:
+    df_now = df[df.time==current_t]
+    fig3d = go.Figure()
+    for _,r in df_now.iterrows():
+        fig3d.add_trace(go.Scatter3d(x=[r.x],y=[r.y],z=[r.z],mode='markers+text', text=[r.id]))
+    st.plotly_chart(fig3d, use_container_width=True)
 
+with tab_map:
+    df_now = df[df.time==current_t]
+    midpoint = (df_now.y.mean(), df_now.x.mean())
+    deck = pdk.Deck(
+        initial_view_state=pdk.ViewState(latitude=midpoint[0], longitude=midpoint[1], zoom=10),
+        layers=[pdk.Layer('ScatterplotLayer',
+                          data=df_now.rename(columns={'x':'lon','y':'lat'}),
+                          get_position=['lon','lat'], get_radius=50)])
+    st.pydeck_chart(deck)
+
+# Playback
 if play:
-    for tt in range(t, t_max + 1):
-        render(tt)
-        time.sleep(spd)
-else:
-    render(t)
+    for t in range(current_t, duration+1, int(1/speed)):
+        time.sleep(1/speed)
+        st.experimental_rerun()
