@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import math
 import plotly.graph_objects as go
-import pydeck as pdk
 
 # --- Dummy Data Generation ---
 def make_dummy_data(duration=120, dt=1):
@@ -62,14 +61,18 @@ st.sidebar.subheader("Battlefield Summary")
 frame_now=df[df.time==t]
 st.sidebar.markdown(generate_summary(frame_now))
 
-# Columns: give a bit more width to plots
-col2d, col3d = st.columns([1.2,1])
+# Columns: give more width to 2D
+col2d, col3d = st.columns([1.4,1])
+
+# Define uncertainty radii
+unc_small = 30
+unc_large = 80
 
 # 2D Radar
 with col2d:
     st.subheader(f"2D Radar (t={t}s)")
     fig2d=go.Figure()
-    # rings
+    # engagement rings
     for r in [100,300,600]:
         fig2d.add_shape(type='circle',x0=-r,y0=-r,x1=r,y1=r, line=dict(dash='dash',color='gray'))
     # infantry
@@ -81,18 +84,17 @@ with col2d:
     hist=df[df.time<=t]
     for did,grp in hist.groupby('id'):
         fig2d.add_trace(go.Scatter(x=grp.x,y=grp.y,mode='lines',name=did))
-    # current drones + confidence areas
+    # current drones + smaller confidence
     for _,r in frame_now.iterrows():
-        # shading: precise vs coarse
-        small,large=50,150
-        fig2d.add_shape(type='circle',x0=r.x-small,y0=r.y-small,x1=r.x+small,y1=r.y+small,
+        # precise vs coarse shading
+        fig2d.add_shape(type='circle',x0=r.x-unc_small,y0=r.y-unc_small,x1=r.x+unc_small,y1=r.y+unc_small,
                         fillcolor='rgba(135,206,250,0.4)',line_width=0)
-        fig2d.add_shape(type='circle',x0=r.x-large,y0=r.y-large,x1=r.x+large,y1=r.y+large,
+        fig2d.add_shape(type='circle',x0=r.x-unc_large,y0=r.y-unc_large,x1=r.x+unc_large,y1=r.y+unc_large,
                         fillcolor='rgba(135,206,250,0.2)',line_width=0)
         colr='red' if 'Shahed' in r.type else ('blue' if 'Mavic' in r.type else 'green')
         fig2d.add_trace(go.Scatter(x=[r.x],y=[r.y],mode='markers+text',
                                    marker=dict(size=16,color=colr),text=[r.id],textposition='bottom right',showlegend=False))
-    fig2d.update_layout(xaxis=dict(range=[-1200,1200]),yaxis=dict(range=[-1200,1200]),height=650)
+    fig2d.update_layout(xaxis=dict(range=[-1200,1200]),yaxis=dict(range=[-1200,1200]),height=700)
     st.plotly_chart(fig2d,use_container_width=True)
 
 # 3D View
@@ -103,25 +105,16 @@ with col3d:
     for did,grp in hist3d.groupby('id'):
         fig3d.add_trace(go.Scatter3d(x=grp.x,y=grp.y,z=grp.z,mode='lines',name=did))
     for _,r in frame_now.iterrows():
-        # confidence spheres: approximate with translucent markers
+        # confidence spheres smaller
         fig3d.add_trace(go.Scatter3d(x=[r.x],y=[r.y],z=[r.z],mode='markers',
-                                    marker=dict(size=large/2,opacity=0.2,color='lightblue'),showlegend=False))
+                                      marker=dict(size=unc_large/4,opacity=0.2,color='lightblue'),showlegend=False))
         fig3d.add_trace(go.Scatter3d(x=[r.x],y=[r.y],z=[r.z],mode='markers',
-                                    marker=dict(size=small/2,opacity=0.4,color='lightblue'),showlegend=False))
+                                      marker=dict(size=unc_small/4,opacity=0.4,color='lightblue'),showlegend=False))
         fig3d.add_trace(go.Scatter3d(x=[r.x],y=[r.y],z=[r.z],mode='markers+text',
-                                    marker=dict(size=8,color='orange'),text=[r.id],textposition='top center',showlegend=False))
-    # infantry bases
+                                      marker=dict(size=8,color='orange'),text=[r.id],textposition='top center',showlegend=False))
     for name,pos in infantry.items():
         fig3d.add_trace(go.Scatter3d(x=[pos[0]],y=[pos[1]],z=[pos[2]],mode='markers+text',
-                                    marker=dict(symbol='square',size=10,color='black'),text=[name],textposition='top center',showlegend=False))
+                                      marker=dict(symbol='square',size=10,color='black'),text=[name],textposition='top center',showlegend=False))
     fig3d.update_layout(scene=dict(xaxis=dict(range=[-1200,1200]),yaxis=dict(range=[-1200,1200]),
-                                   zaxis=dict(range=[0,1200])),height=650)
+                                   zaxis=dict(range=[0,1200])),height=700)
     st.plotly_chart(fig3d,use_container_width=True)
-
-# Map View below
-st.subheader("Map View of Drones")
-fig_map=pdk.Deck(layers=[pdk.Layer('ScatterplotLayer',data=frame_now.rename(columns={'x':'lon','y':'lat'}),
-                                 get_position='[lon, lat]',get_radius=50,pickable=True)],
-                 initial_view_state=pdk.ViewState(longitude=float(frame_now.x.mean()),
-                                                 latitude=float(frame_now.y.mean()),zoom=10))
-st.pydeck_chart(fig_map)
