@@ -42,6 +42,7 @@ def make_dummy_data():
         df.loc[m,['vx','vy','vz']] = df[m][['x','y','z']].diff().fillna(0)
     return df
 
+# Dataframe
 df = make_dummy_data()
 
 # Friendly unit
@@ -57,52 +58,80 @@ def compute_impact(x,y,z,vx,vy,vz,sec=5):
     return px,py,pz,r
 
 #######################################
-# 3D Plot (white background)
+# 3D Plot (white background) with rings
 #######################################
 def plot_3d(t):
     fig = plt.figure(figsize=(10,8))
     ax = fig.add_subplot(111, projection='3d')
     ax.set_xlim(-700,700); ax.set_ylim(-700,700); ax.set_zlim(0,400)
     ax.set_title(f"Time = {t}s")
-    # ground
+    # ground plane
     xx,yy = np.meshgrid(np.linspace(-700,700,2), np.linspace(-700,700,2))
     ax.plot_surface(xx,yy,np.zeros_like(xx),color='lightgray',alpha=0.3)
-    # friendly
-    for pos in infantry_positions.values(): ax.scatter(*pos, c='black', marker='^', s=150)
-    # history
-    for d in df['id'].unique(): hist = df[(df.id==d)&(df.time<=t)]; ax.plot(hist.x,hist.y,hist.z, linestyle='dotted', color='gray', alpha=0.5)
+    # 100m and 500m rings on ground
+    theta = np.linspace(0, 2*np.pi, 200)
+    for radius in [100, 500]:
+        x_ring = radius * np.cos(theta)
+        y_ring = radius * np.sin(theta)
+        z_ring = np.zeros_like(theta)
+        ax.plot(x_ring, y_ring, z_ring, color='black', linestyle='--', linewidth=1)
+    # friendly unit marker
+    for pos in infantry_positions.values():
+        ax.scatter(*pos, c='black', marker='^', s=150)
+    # historical paths
+    for d in df['id'].unique():
+        hist = df[(df.id==d)&(df.time<=t)]
+        ax.plot(hist.x, hist.y, hist.z, linestyle='dotted', color='gray', alpha=0.5)
     events = []
-    for _,r in df[df.time==t].iterrows():
+    # current positions, spheres, markers
+    for _, r in df[df.time==t].iterrows():
         c = 'red' if r.id=='D1' else 'blue' if r.id=='D2' else 'green'
         # sphere
-        u,v = np.mgrid[0:2*np.pi:12j,0:np.pi:6j]
+        u,v = np.mgrid[0:2*np.pi:12j, 0:np.pi:6j]
         xs = r.x + sizes[r.id]*np.cos(u)*np.sin(v)
         ys = r.y + sizes[r.id]*np.sin(u)*np.sin(v)
         zs = r.z + sizes[r.id]*np.cos(v)
-        ax.plot_surface(xs,ys,zs,color=c,alpha=0.2)
-        # marker
-        ax.scatter(r.x,r.y,r.z,c=c,s=20)
-        ax.text(r.x+10,r.y+10,r.z+10, r.id, color=c)
-        if r.id=='D1': px,py,pz,rad = compute_impact(r.x,r.y,r.z,r.vx,r.vy,r.vz); events.append(f"D1 impact at ({px:.0f},{py:.0f},{pz:.0f}) r={rad:.0f}m")
+        ax.plot_surface(xs, ys, zs, color=c, alpha=0.2)
+        # smaller marker
+        ax.scatter(r.x, r.y, r.z, c=c, s=20)
+        ax.text(r.x+10, r.y+10, r.z+10, r.id, color=c)
+        # impact event for D1
+        if r.id=='D1':
+            px,py,pz,rad = compute_impact(r.x, r.y, r.z, r.vx, r.vy, r.vz)
+            events.append(f"D1 impact at ({px:.0f},{py:.0f},{pz:.0f}) r={rad:.0f}m")
+    ax.set_box_aspect([1,1,0.5])
     return fig, events
 
 #######################################
-# 2D Plot (white background)
+# 2D Plot (white background) with rings
 #######################################
 def plot_2d(t):
-    fig,ax = plt.subplots(figsize=(8,8))
+    fig, ax = plt.subplots(figsize=(8,8))
     ax.set_xlim(-700,700); ax.set_ylim(-700,700)
     ax.set_title(f"Time = {t}s")
-    for pos in infantry_positions.values(): ax.scatter(pos[0],pos[1],c='black',marker='^',s=100)
-    for d in df['id'].unique(): hist = df[(df.id==d)&(df.time<=t)]; ax.plot(hist.x,hist.y, linestyle='dotted', color='gray', alpha=0.5)
+    # 100m and 500m rings around central unit in 2D
+    for radius in [100, 500]:
+        circle = plt.Circle((0,0), radius, color='black', fill=False, linestyle='--', linewidth=1)
+        ax.add_patch(circle)
+    # friendly unit marker
+    ax.scatter(0, 0, c='black', marker='^', s=100)
+    # historical paths
+    for d in df['id'].unique():
+        hist = df[(df.id==d)&(df.time<=t)]
+        ax.plot(hist.x, hist.y, linestyle='dotted', color='gray', alpha=0.5)
     events = []
-    for _,r in df[df.time==t].iterrows():
+    # current positions, shaded circles, markers
+    for _, r in df[df.time==t].iterrows():
         c = 'red' if r.id=='D1' else 'blue' if r.id=='D2' else 'green'
-        ax.add_patch(plt.Circle((r.x,r.y), sizes[r.id], color=c, alpha=0.2))
-        ax.plot(r.x,r.y,'o',color=c,markersize=2)
-        ax.text(r.x+10,r.y+10, r.id, color=c)
-        if r.id=='D1': px,py,_,rad = compute_impact(r.x,r.y,r.z,r.vx,r.vy,r.vz); events.append(f"D1 2D impact at ({px:.0f},{py:.0f}) r={rad:.0f}m")
+        ax.add_patch(plt.Circle((r.x, r.y), sizes[r.id], color=c, alpha=0.2))
+        ax.plot(r.x, r.y, 'o', color=c, markersize=2)
+        ax.text(r.x+10, r.y+10, r.id, color=c)
+        # impact event for D1
+        if r.id=='D1':
+            px, py, _, rad = compute_impact(r.x, r.y, r.z, r.vx, r.vy, r.vz)
+            events.append(f"D1 2D impact at ({px:.0f},{py:.0f}) r={rad:.0f}m")
     ax.grid(True, color='gray', linestyle='--', alpha=0.3)
+    ax.set_aspect('equal')
     return fig, events
 
 # --- Streamlit UI ---
@@ -111,15 +140,15 @@ with st.sidebar:
     st.header("Controls")
     t = st.slider("Time (s)", 0, int(df.time.max()), 0)
     play = st.button("Play")
-    delay = st.number_input("Speed s/frame", 0.1,5.0,0.75)
+    delay = st.number_input("Speed s/frame", 0.1, 5.0, 0.75)
 
-# placeholders
+# placeholders for updating figures and events
 col1, col2 = st.columns(2)
 placeholder2d = col1.empty()
 placeholder3d = col2.empty()
 events_placeholder = st.empty()
 
-# render loop
+# function to render a single frame
 def render_frame(time_val):
     fig2, ev2 = plot_2d(time_val)
     fig3, ev3 = plot_3d(time_val)
@@ -129,6 +158,7 @@ def render_frame(time_val):
     events_placeholder.subheader("Events")
     events_placeholder.write("\n".join(events) or "No events.")
 
+# main loop: reuse placeholders to avoid duplication
 if play:
     for t0 in range(t, int(df.time.max())+1):
         render_frame(t0)
