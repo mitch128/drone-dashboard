@@ -6,6 +6,9 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import time
 import math
 
+# --- Streamlit Page Config (must be first) ---
+st.set_page_config(page_title="Drone Dashboard", layout="wide")
+
 # --- Apply military-style CSS for Streamlit ---
 st.markdown("""
 <style>
@@ -118,7 +121,6 @@ def plot_2d(t):
     return fig, events
 
 # --- Streamlit UI ---
-st.set_page_config(page_title="Drone Dashboard", layout="wide")
 st.title("Drone Intelligence Dashboard")
 
 # Controls
