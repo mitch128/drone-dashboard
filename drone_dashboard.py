@@ -21,11 +21,11 @@ def make_dummy_data():
         noise = np.random.normal(0, 2, 3)
         pos = start_D1 + base_velocity_D1 * t + deviation + noise
         rows.append({'time': t, 'id': 'D1', 'type': 'Shahed', 'x': pos[0], 'y': pos[1], 'z': pos[2]})
-    # Drone D2: Recon (DJI Mavic)
+    # Drone D2: Recon (DJI Mavic) with less-circular path
     start_D2 = np.array([200, 400, 100])
     for t in timestamps:
-        angle = 0.2 * t
-        radius = 50 + 0.5 * t
+        angle = 0.15 * t + 0.05 * np.sin(0.1 * t)  # less uniform circularity
+        radius = 50 + 0.5 * t + 5 * np.sin(0.2 * t)
         pos = start_D2 + np.array([radius * np.cos(angle), radius * np.sin(angle), 2*t])
         noise = np.random.normal(0, 1.5, 3)
         pos += noise
@@ -49,10 +49,7 @@ df = make_dummy_data()
 #######################################
 # 2. Define Single Friendly Position in 3D (Central Unit)
 #######################################
-# Only one position in the middle
-infantry_positions = {
-    "Central Unit": (0, 0, 0)
-}
+infantry_positions = {"Central Unit": (0, 0, 0)}
 
 #######################################
 # Utility functions
@@ -68,6 +65,9 @@ def compute_impact_zone(x, y, z, vx, vy, vz, seconds=5):
     radius = 0.15 * disp + 15
     return proj_x, proj_y, proj_z, radius
 
+# Sphere radii per drone type
+sphere_sizes = {'D1': 50, 'D2': 40, 'D3': 30}
+
 #######################################
 # 3D Plotting
 #######################################
@@ -77,31 +77,43 @@ def plot_radar_frame_3d(t):
     ax.set_facecolor('#F7F7F7')
     ax.set_title(f"3D Drone Tracker – Time = {t}s", fontsize=16)
     ax.set_xlim(-700,700); ax.set_ylim(-700,700); ax.set_zlim(0,400)
+    # ground plane
     xx, yy = np.meshgrid(np.linspace(-700,700,2), np.linspace(-700,700,2))
     ax.plot_surface(xx, yy, np.zeros_like(xx), color='lightgray', alpha=0.3)
-    for name, (ix,iy,iz) in infantry_positions.items():
+    # friendly unit
+    for name,(ix,iy,iz) in infantry_positions.items():
         ax.scatter(ix,iy,iz,c='k',marker='^',s=100)
         ax.text(ix+10,iy+10,iz+10,name,fontsize=10,weight='bold')
     current = df[df.time==t]
+    # historical paths
     for drone_id in df['id'].unique():
         hist = df[(df.id==drone_id)&(df.time<=t)]
-        ax.plot(hist.x, hist.y, hist.z, linestyle='dotted', color='gray', alpha=0.7)
+        ax.plot(hist.x,hist.y,hist.z,linestyle='dotted',color='gray',alpha=0.7)
     info, events = {}, []
     for _,row in current.iterrows():
-        c = 'red' if row.type=='Shahed' else 'blue' if row.type=='DJI Mavic' else 'green'
-        ax.scatter(row.x,row.y,row.z,c=c,marker='o',s=80,alpha=0.9)
+        c = 'red' if row.id=='D1' else 'blue' if row.id=='D2' else 'green'
+        # semi-transparent sphere
+        r = sphere_sizes.get(row.id, 20)
+        u,v = np.mgrid[0:2*np.pi:12j, 0:np.pi:6j]
+        xs = row.x + r*np.cos(u)*np.sin(v)
+        ys = row.y + r*np.sin(u)*np.sin(v)
+        zs = row.z + r*np.cos(v)
+        ax.plot_surface(xs,ys,zs,color=c,alpha=0.2)
+        # smaller point (half size)
+        ax.scatter(row.x,row.y,row.z,c=c,marker='o',s=40,alpha=0.9)
+        # annotation
         vmag = math.sqrt(row.velocity_x**2+row.velocity_y**2+row.velocity_z**2)
-        ax.text(row.x+10,row.y+10,row.z+10,f"{row.id}\n{row.type}\nV:{vmag:.1f}",fontsize=9,color=c)
-        if row.type=='Shahed':
+        ax.text(row.x+10,row.y+10,row.z+10,f"{row.id}\nV:{vmag:.1f}",fontsize=9,color=c)
+        # impact for D1
+        if row.id=='D1':
             px,py,pz,rad = compute_impact_zone(row.x,row.y,row.z,row.velocity_x,row.velocity_y,row.velocity_z)
             ax.quiver(row.x,row.y,row.z,px-row.x,py-row.y,pz-row.z,color='red',arrow_length_ratio=0.15,alpha=0.7)
-            u = np.linspace(0,2*np.pi,20); v = np.linspace(0,np.pi,10)
-            xs = px + rad*np.outer(np.cos(u), np.sin(v))
-            ys = py + rad*np.outer(np.sin(u), np.sin(v))
-            zs = pz + rad*np.outer(np.ones_like(u), np.cos(v))
-            ax.plot_wireframe(xs,ys,zs,color='red',alpha=0.3)
-            ax.text(px+10,py+10,pz+10,"Projected Impact Zone",fontsize=8,color='red')
-            events.append(f"ALERT: {row.id} impact at ({px:.1f},{py:.1f},{pz:.1f}) r={rad:.1f}m")
+            uu,vv = np.linspace(0,2*np.pi,20), np.linspace(0,np.pi,10)
+            xs2 = px + rad*np.outer(np.cos(uu), np.sin(vv))
+            ys2 = py + rad*np.outer(np.sin(uu), np.sin(vv))
+            zs2 = pz + rad*np.outer(np.ones_like(uu), np.cos(vv))
+            ax.plot_wireframe(xs2,ys2,zs2,color='red',alpha=0.3)
+            events.append(f"ALERT: D1 impact at ({px:.1f},{py:.1f},{pz:.1f}) r={rad:.1f}m")
     return fig, current, info, events
 
 #######################################
@@ -113,26 +125,34 @@ def plot_radar_frame_2d(t):
     ax.set_title(f"2D Birds-eye Drone Tracker – Time = {t}s", fontsize=16)
     ax.set_xlim(-700,700); ax.set_ylim(-700,700)
     current = df[df.time==t]
+    # friendly unit circle patches
     for name,(ix,iy,_) in infantry_positions.items():
         ax.plot(ix,iy,'ks',markersize=10)
         ax.text(ix+10,iy+10,name,fontsize=10,weight='bold')
         for r in (100,250,500):
             ax.add_patch(plt.Circle((ix,iy),r,fill=False,linestyle='dotted',alpha=0.5))
     events=[]; info={}
+    # historical paths
     for drone_id in df['id'].unique():
         hist = df[(df.id==drone_id)&(df.time<=t)]
         ax.plot(hist.x,hist.y,linestyle='dotted',color='gray',alpha=0.7)
     for _,row in current.iterrows():
-        c='red' if row.type=='Shahed' else 'blue' if row.type=='DJI Mavic' else 'green'
-        ax.plot(row.x,row.y,'o',color=c,markersize=8,alpha=0.9)
+        c = 'red' if row.id=='D1' else 'blue' if row.id=='D2' else 'green'
+        # shaded circle around drone
+        r = sphere_sizes.get(row.id,20)
+        circle = plt.Circle((row.x,row.y),r,fill=True,alpha=0.2)
+        ax.add_patch(circle)
+        # smaller marker
+        ax.plot(row.x,row.y,'o',color=c,markersize=4,alpha=0.9)
+        # annotation
         vmag = math.sqrt(row.velocity_x**2+row.velocity_y**2+row.velocity_z**2)
         ax.text(row.x+10,row.y+10,f"{row.id}\nV:{vmag:.1f}",fontsize=8,color=c)
-        if row.type=='Shahed':
+        # impact arrow for D1
+        if row.id=='D1':
             px,py,_,rad = compute_impact_zone(row.x,row.y,row.z,row.velocity_x,row.velocity_y,row.velocity_z)
             ax.arrow(row.x,row.y,px-row.x,py-row.y,head_width=15,head_length=15,fc='red',ec='red',alpha=0.7)
             ax.add_patch(plt.Circle((px,py),rad,fill=True,alpha=0.2))
-            ax.text(px+10,py+10,"Impact Zone",fontsize=8,color='red')
-            events.append(f"ALERT: {row.id} 2D impact at ({px:.1f},{py:.1f}) r={rad:.1f}m")
+            events.append(f"ALERT: D1 2D impact at ({px:.1f},{py:.1f}) r={rad:.1f}m")
     ax.grid(True,linestyle='--',alpha=0.5)
     return fig, current, info, events
 
