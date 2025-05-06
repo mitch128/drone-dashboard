@@ -141,7 +141,6 @@ with top_cols[0]:
 # Placeholders
 placeholder2d = top_cols[1].empty()
 placeholder3d = top_cols[2].empty()
-summary_box = st.empty()
 
 # Render frame
 def render(t0):
@@ -150,7 +149,6 @@ def render(t0):
     placeholder2d.pyplot(fig2)
     placeholder3d.pyplot(fig3)
     counts = df[df.time==t0]['id'].value_counts().to_dict()
-    summary_box.markdown("**Counts:** " + ", ".join(f"{k}:{v}" for k,v in counts.items()))
 
 # Main loop
 if play:
