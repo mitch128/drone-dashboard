@@ -77,7 +77,10 @@ def plot_3d(t):
     fig = plt.figure(facecolor='black', figsize=(10,8))
     ax = fig.add_subplot(111, projection='3d', facecolor='black')
     ax.set_xlim(-700,700); ax.set_ylim(-700,700); ax.set_zlim(0,400)
-    ax.w_xaxis.set_pane_color((0,0,0,1)); ax.w_yaxis.set_pane_color((0,0,0,1)); ax.w_zaxis.set_pane_color((0,0,0,1))
+    # Set pane colors using correct attributes
+    ax.xaxis.set_pane_color((0,0,0,1))
+    ax.yaxis.set_pane_color((0,0,0,1))
+    ax.zaxis.set_pane_color((0,0,0,1))
     ax.set_title(f"Time = {t}s", color='#A3DE83')
     # ground
     xx,yy = np.meshgrid(np.linspace(-700,700,2), np.linspace(-700,700,2))
@@ -137,13 +140,13 @@ if play:
     for t0 in range(t, int(df.time.max())+1):
         fig2, ev2 = plot_2d(t0); fig3, ev3 = plot_3d(t0)
         col1.pyplot(fig2); col2.pyplot(fig3)
-        events_log = ev2+ev3
+        events = ev2+ev3
         st.subheader("Events")
-        st.write("\n".join(events_log) or "No events.")
+        st.write("\n".join(events) or "No events.")
         time.sleep(delay)
 else:
     fig2, ev2 = plot_2d(t); fig3, ev3 = plot_3d(t)
     col1.pyplot(fig2); col2.pyplot(fig3)
-    events_log = ev2+ev3
+    events = ev2+ev3
     st.subheader("Events")
-    st.write("\n".join(events_log) or "No events.")
+    st.write("\n".join(events) or "No events.")
