@@ -9,18 +9,9 @@ import math
 # --- Streamlit Page Config ---
 st.set_page_config(page_title="Drone Dashboard", layout="wide")
 
-# --- Military-style CSS ---
-st.markdown("""
-<style>
-body {background-color: #000000; color: #A3DE83;}
-.reportview-container .main .block-container {background-color: #000000;}
-.sidebar .sidebar-content {background-color: #1A1A1A; color: #A3DE83;}
-h1, h2, h3, .block-container .element-container span {color: #A3DE83;}
-.stButton>button, .stSlider>div>div>div>input, .stNumberInput>div>input {background-color: #2E4E1D; color: #A3DE83;}
-</style>
-""", unsafe_allow_html=True)
-
-# --- Data Generation ---
+#######################################
+# 1. Generate Dummy Drone Data
+#######################################
 def make_dummy_data():
     np.random.seed(42)
     timestamps = np.arange(0, 31)
@@ -65,23 +56,24 @@ def compute_impact(x,y,z,vx,vy,vz,sec=5):
     r = 0.15*dist+15
     return px,py,pz,r
 
-# 3D Plot
+#######################################
+# 3D Plot (white background)
+#######################################
 def plot_3d(t):
-    fig = plt.figure(facecolor='black', figsize=(10,8))
-    ax = fig.add_subplot(111, projection='3d', facecolor='black')
+    fig = plt.figure(figsize=(10,8))
+    ax = fig.add_subplot(111, projection='3d')
     ax.set_xlim(-700,700); ax.set_ylim(-700,700); ax.set_zlim(0,400)
-    ax.xaxis.set_pane_color((0,0,0,1)); ax.yaxis.set_pane_color((0,0,0,1)); ax.zaxis.set_pane_color((0,0,0,1))
-    ax.set_title(f"Time = {t}s", color='#A3DE83')
+    ax.set_title(f"Time = {t}s")
     # ground
     xx,yy = np.meshgrid(np.linspace(-700,700,2), np.linspace(-700,700,2))
-    ax.plot_surface(xx,yy,np.zeros_like(xx),color='#2E4E1D',alpha=0.3)
+    ax.plot_surface(xx,yy,np.zeros_like(xx),color='lightgray',alpha=0.3)
     # friendly
-    for pos in infantry_positions.values(): ax.scatter(*pos, c='#A3DE83', marker='^', s=150)
+    for pos in infantry_positions.values(): ax.scatter(*pos, c='black', marker='^', s=150)
     # history
     for d in df['id'].unique(): hist = df[(df.id==d)&(df.time<=t)]; ax.plot(hist.x,hist.y,hist.z, linestyle='dotted', color='gray', alpha=0.5)
     events = []
     for _,r in df[df.time==t].iterrows():
-        c = '#FF4136' if r.id=='D1' else '#0074D9' if r.id=='D2' else '#2ECC40'
+        c = 'red' if r.id=='D1' else 'blue' if r.id=='D2' else 'green'
         # sphere
         u,v = np.mgrid[0:2*np.pi:12j,0:np.pi:6j]
         xs = r.x + sizes[r.id]*np.cos(u)*np.sin(v)
@@ -94,16 +86,18 @@ def plot_3d(t):
         if r.id=='D1': px,py,pz,rad = compute_impact(r.x,r.y,r.z,r.vx,r.vy,r.vz); events.append(f"D1 impact at ({px:.0f},{py:.0f},{pz:.0f}) r={rad:.0f}m")
     return fig, events
 
-# 2D Plot
+#######################################
+# 2D Plot (white background)
+#######################################
 def plot_2d(t):
-    fig,ax = plt.subplots(facecolor='black', figsize=(8,8))
-    ax.set_facecolor('black'); ax.set_xlim(-700,700); ax.set_ylim(-700,700)
-    ax.set_title(f"Time = {t}s", color='#A3DE83')
-    for pos in infantry_positions.values(): ax.scatter(pos[0],pos[1],c='#A3DE83',marker='^',s=100)
+    fig,ax = plt.subplots(figsize=(8,8))
+    ax.set_xlim(-700,700); ax.set_ylim(-700,700)
+    ax.set_title(f"Time = {t}s")
+    for pos in infantry_positions.values(): ax.scatter(pos[0],pos[1],c='black',marker='^',s=100)
     for d in df['id'].unique(): hist = df[(df.id==d)&(df.time<=t)]; ax.plot(hist.x,hist.y, linestyle='dotted', color='gray', alpha=0.5)
     events = []
     for _,r in df[df.time==t].iterrows():
-        c = '#FF4136' if r.id=='D1' else '#0074D9' if r.id=='D2' else '#2ECC40'
+        c = 'red' if r.id=='D1' else 'blue' if r.id=='D2' else 'green'
         ax.add_patch(plt.Circle((r.x,r.y), sizes[r.id], color=c, alpha=0.2))
         ax.plot(r.x,r.y,'o',color=c,markersize=2)
         ax.text(r.x+10,r.y+10, r.id, color=c)
