@@ -1,201 +1,381 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
-from math import sqrt
 import plotly.graph_objects as go
 import time
+import math
 
-# --- Constants ---
-COLORS = {'Orlan': 'orange', 'Shahed': 'red', 'Zala': 'green'}
-infantry = {'Unit A': (150, -200, 0), 'Unit B': (-200, 100, 0)}
+#-----------------------------------------------------------
+# 1. Define Simulation Parameters & Geographic Helpers
+#-----------------------------------------------------------
+reference_locations = {
+    "Kursk, Russia": {"lat": 51.7300, "lon": 36.1900},
+    "Odessa, Ukraine": {"lat": 46.4825, "lon": 30.7233},
+    "Kiev, Ukraine": {"lat": 50.4501, "lon": 30.5234},
+}
 
-# --- Simulated Data ---
-np.random.seed(42)
-drone_ids = ['D1', 'D2', 'D3']
-drone_types = ['Orlan', 'Shahed', 'Zala']
-frames = []
-for i, (did, dtype) in enumerate(zip(drone_ids, drone_types)):
-    for t in range(31):
-        frames.append({
-            'id': did,
-            'type': dtype,
+def to_geo(x, y, ref_lat, ref_lon):
+    # Use a simple conversion: 1 degree latitude ~111 km; adjusted for longitude.
+    delta_lat = x / 111000  # meters to degrees latitude
+    delta_lon = y / (111000 * np.cos(np.deg2rad(ref_lat)))
+    return ref_lat + delta_lat, ref_lon + delta_lon
+
+#-----------------------------------------------------------
+# 2. Generate Realistic Dummy Drone Data (Local Coords in meters)
+#-----------------------------------------------------------
+def make_dummy_data():
+    np.random.seed(42)
+    timestamps = np.arange(0, 31)  # simulate 31 seconds
+    rows = []
+    
+    # Drone D1: High-threat (Shahed) with a smooth curved descent.
+    start_D1 = np.array([-600, -500, 200])
+    base_velocity_D1 = np.array([30, 35, -4])
+    for t in timestamps:
+        deviation = np.array([20 * np.sin(0.08*t), 20 * np.cos(0.08*t), 5 * np.sin(0.04*t)])
+        noise = np.random.normal(0, 2, 3)
+        pos = start_D1 + base_velocity_D1 * t + deviation + noise
+        rows.append({
             'time': t,
-            'x': np.sin(0.1 * t + i) * 300 + i * 50,
-            'y': np.cos(0.1 * t + i) * 300 + i * 50,
-            'z': 50 + 20 * i + np.sin(0.2 * t) * 20
+            'id': 'D1',
+            'type': 'Shahed',
+            'x': pos[0],
+            'y': pos[1],
+            'z': pos[2]
         })
-df = pd.DataFrame(frames)
+    
+    # Drone D2: Recon drone (DJI Mavic) following a looping spiral.
+    start_D2 = np.array([200, 400, 100])
+    for t in timestamps:
+        angle = 0.2*t
+        radius = 50 + 1.0*t  # increasing spiral radius
+        pos = start_D2 + np.array([radius*np.cos(angle), radius*np.sin(angle), 1.5*t])
+        noise = np.random.normal(0, 1.5, 3)
+        pos = pos + noise
+        rows.append({
+            'time': t,
+            'id': 'D2',
+            'type': 'DJI Mavic',
+            'x': pos[0],
+            'y': pos[1],
+            'z': pos[2]
+        })
 
-# --- Streamlit Page Config ---
-st.set_page_config(layout="wide")
-st.title("🛡️ Drone Tracker Dashboard")
-st.markdown("Simulated radar view for infantry teams to monitor aerial drone threats in real time.")
+    # Drone D3: Surveillance (Recon) with steady drift and altitude oscillation.
+    start_D3 = np.array([-300, 600, 150])
+    for t in timestamps:
+        base = start_D3 + np.array([12*t, -14*t, 1.2*t])
+        oscillation = np.array([10*np.sin(0.15*t), 10*np.cos(0.15*t), 4*np.sin(0.2*t)])
+        noise = np.random.normal(0, 1, 3)
+        pos = base + oscillation + noise
+        rows.append({
+            'time': t,
+            'id': 'D3',
+            'type': 'Recon',
+            'x': pos[0],
+            'y': pos[1],
+            'z': pos[2]
+        })
+    
+    df = pd.DataFrame(rows).sort_values(["id", "time"]).reset_index(drop=True)
+    df[['velocity_x', 'velocity_y', 'velocity_z']] = df.groupby('id')[['x','y','z']].diff().fillna(0)
+    return df
 
-# --- Session State Setup ---
-if "simulation_time" not in st.session_state:
-    st.session_state.simulation_time = 0
-if "playing" not in st.session_state:
-    st.session_state.playing = False
+df = make_dummy_data()
 
-# --- Layout: Controls Section ---
-col_controls, col_charts = st.columns([1, 3])
-with col_controls:
-    st.write(f"Current time: **{st.session_state.simulation_time}** sec")
-    if st.button("Play" if not st.session_state.playing else "Pause"):
-        st.session_state.playing = not st.session_state.playing
+#-----------------------------------------------------------
+# 3. Friendly Unit Positions (Local Coords in meters)
+#-----------------------------------------------------------
+friendly_units = {
+    "Alpha (1st Battalion HQ)": (-50, -50, 0),
+    "Bravo (FOB – Forward Operating Base)": (250, 150, 0),
+    "Charlie (Observation Post)": (-200, -150, 0)
+}
 
-    slider_time = st.slider(
-        "Set Simulation Time (seconds)",
-        min_value=0,
-        max_value=int(df.time.max()),
-        value=st.session_state.simulation_time,
-        key="time_slider"
+#-----------------------------------------------------------
+# 4. Compute Projected Impact Zone for a High-threat Drone (Shahed)
+#-----------------------------------------------------------
+def compute_impact_zone(x, y, z, vx, vy, vz, seconds=5):
+    proj_x = x + vx * seconds
+    proj_y = y + vy * seconds
+    proj_z = z + vz * seconds
+    displacement = math.sqrt((vx*seconds)**2 + (vy*seconds)**2 + (vz*seconds)**2)
+    impact_radius = 0.1 * displacement + 20
+    return proj_x, proj_y, proj_z, impact_radius
+
+#-----------------------------------------------------------
+# 5. Plotting Functions: 2D Map & 3D View
+#-----------------------------------------------------------
+def get_recent_traj(drone_id, current_time, window=5):
+    """Return the trajectory (last few points) for a given drone id."""
+    traj = df[(df['id'] == drone_id) & (df.time <= current_time)].tail(window)
+    return traj
+
+def build_map_figure(t, ref_location):
+    ref_lat = ref_location["lat"]
+    ref_lon = ref_location["lon"]
+    frame = df[df.time == t]
+
+    # Drone markers, impact zones, and trajectory tails holders.
+    drone_lats, drone_lons, drone_texts, drone_colors = [], [], [], []
+    traj_xs, traj_ys, traj_texts, traj_colors = {}, {}, {}, {}
+
+    impact_circles = []  
+
+    # Process each row of current frame.
+    for _, row in frame.iterrows():
+        lat, lon = to_geo(row.x, row.y, ref_lat, ref_lon)
+        drone_lats.append(lat)
+        drone_lons.append(lon)
+        vel_mag = math.sqrt(row.velocity_x**2 + row.velocity_y**2 + row.velocity_z**2)
+        drone_texts.append(f"{row['id']} ({row['type']})<br>Alt: {row.z:.1f}m<br>Speed: {vel_mag:.1f} m/s")
+        
+        # Color coding.
+        if row['type'] == 'Shahed':
+            color = "red"
+            # Compute impact zone.
+            proj_x, proj_y, proj_z, impact_radius = compute_impact_zone(row.x, row.y, row.z, row.velocity_x, row.velocity_y, row.velocity_z, seconds=5)
+            proj_lat, proj_lon = to_geo(proj_x, proj_y, ref_lat, ref_lon)
+            impact_radius_deg = impact_radius / 111000
+            impact_circles.append({
+                'center_lat': proj_lat,
+                'center_lon': proj_lon,
+                'radius_deg': impact_radius_deg,
+                'text': f"{row['id']} Impact Zone<br>Radius: {impact_radius:.1f} m"
+            })
+        elif row['type'] == 'DJI Mavic':
+            color = "blue"
+        else:
+            color = "green"
+        drone_colors.append(color)
+        
+        # Trajectory tail: save last window points for this drone.
+        traj = get_recent_traj(row.id, t)
+        traj_lats = []
+        traj_lons = []
+        for _, srow in traj.iterrows():
+            glat, glon = to_geo(srow.x, srow.y, ref_lat, ref_lon)
+            traj_lats.append(glat)
+            traj_lons.append(glon)
+        traj_xs[row.id] = traj_lats
+        traj_ys[row.id] = traj_lons
+        traj_texts[row.id] = row['id']
+        traj_colors[row.id] = color
+
+    # Friendly unit positions.
+    friendly_lats, friendly_lons, friendly_texts = [], [], []
+    for name, (fx, fy, _) in friendly_units.items():
+        glat, glon = to_geo(fx, fy, ref_lat, ref_lon)
+        friendly_lats.append(glat)
+        friendly_lons.append(glon)
+        friendly_texts.append(name)
+    
+    # Build the map figure.
+    fig = go.Figure()
+
+    # Drone current positions.
+    fig.add_trace(go.Scattermapbox(
+        lat=drone_lats,
+        lon=drone_lons,
+        mode='markers',
+        marker=go.scattermapbox.Marker(size=12, color=drone_colors),
+        text=drone_texts,
+        hoverinfo='text',
+        name='Drones'
+    ))
+    
+    # Drone trajectory tails.
+    for drone_id, lats in traj_xs.items():
+        fig.add_trace(go.Scattermapbox(
+            lat=lats,
+            lon=traj_ys[drone_id],
+            mode='lines+markers',
+            line=dict(color=traj_colors[drone_id], width=2),
+            marker=dict(size=6),
+            name=f"{drone_id} Trajectory",
+            hoverinfo='none'
+        ))
+    
+    # Friendly units.
+    fig.add_trace(go.Scattermapbox(
+        lat=friendly_lats,
+        lon=friendly_lons,
+        mode='markers+text',
+        marker=go.scattermapbox.Marker(size=14, color="black", symbol="star"),
+        text=friendly_texts,
+        textposition="top right",
+        name="Friendly Units",
+        hoverinfo="text"
+    ))
+    
+    # Impact zones for high-threat drones.
+    for circle in impact_circles:
+        circle_lats = []
+        circle_lons = []
+        N = 50
+        for theta in np.linspace(0, 2*np.pi, N):
+            circle_lats.append(circle['center_lat'] + circle['radius_deg'] * np.cos(theta))
+            circle_lons.append(circle['center_lon'] + circle['radius_deg'] * np.sin(theta))
+        fig.add_trace(go.Scattermapbox(
+            lat=circle_lats,
+            lon=circle_lons,
+            mode='lines',
+            line=dict(color="red", width=2),
+            name="Impact Zone",
+            hoverinfo='none'
+        ))
+
+    fig.update_layout(
+        mapbox=dict(
+            style="open-street-map",
+            center=go.layout.mapbox.Center(lat=ref_lat, lon=ref_lon),
+            zoom=10
+        ),
+        margin={"r":0,"t":0,"l":0,"b":0},
+        title=f"2D Drone Tracker – Time = {t} s"
     )
-    if slider_time != st.session_state.simulation_time:
-        st.session_state.simulation_time = slider_time
-        st.session_state.playing = False
+    return fig, frame
 
-# --- Layout: Chart Section ---
-col_chart1, col_chart2 = st.columns(2)
-matplotlib_placeholder = col_chart1.empty()
-plotly_placeholder = col_chart2.empty()
+def build_3d_figure(t):
+    # Use a 3D scatter (axes are local cartesian x,y,z) with trajectories.
+    frame = df[df.time == t]
+    
+    fig = go.Figure()
 
-status_placeholder = st.empty()
-alerts_placeholder = st.empty()
-
-# --- Helper Functions ---
-def distance(p1, p2):
-    return sqrt(sum((a - b) ** 2 for a, b in zip(p1, p2)))
-
-def plot_frame(t, three_d=False):
-    if not three_d:
-        fig, ax = plt.subplots(figsize=(7, 7))
-        ax.set_facecolor('#EAEAEA')
-        ax.set_xlim(-600, 600)
-        ax.set_ylim(-600, 600)
-        for r in (100, 250, 500):
-            circle = Circle((0, 0), r, fill=False, ls='--', color='gray', lw=1)
-            ax.add_patch(circle)
-            ax.text(r - 15, 0, f"{r}m", fontsize=8, color='gray')
-        ax.set_title(f"Drone Tracker t={t}s", fontsize=14)
-
-        for name, (ix, iy, iz) in infantry.items():
-            ax.plot(ix, iy, 'ks', ms=8)
-            ax.text(ix + 8, iy + 8, name, fontsize=8)
-
-        for drone_id in df.id.unique():
-            path = df[(df.id == drone_id) & (df.time <= t)].sort_values('time')
-            if len(path) > 1:
-                c = COLORS[path.type.iloc[0]]
-                alphas = np.linspace(0.2, 0.6, len(path) - 1)
-                for i in range(len(path) - 1):
-                    x0, y0 = path.iloc[i][['x', 'y']]
-                    x1, y1 = path.iloc[i + 1][['x', 'y']]
-                    ax.plot([x0, x1], [y0, y1], ls=':', color=c, alpha=alphas[i])
-
-        now = df[df.time == t]
-        counts, events, seen = {}, [], set()
-        for _, r in now.iterrows():
-            counts[r.type] = counts.get(r.type, 0) + 1
-            c = COLORS[r.type]
-            ax.plot(r.x, r.y, 'o', c=c, ms=8, label=r.type if r.type not in seen else "")
-            ax.text(r.x + 5, r.y + 5, f"{r.id}", fontsize=7)
-            seen.add(r.type)
-            if r.type == 'Shahed':
-                events.append(f"ALERT {r.id} at ({r.x:.0f},{r.y:.0f})")
-                ax.arrow(r.x, r.y, 100, 80, head_width=10, head_length=10, fc=c, ec=c, alpha=0.5)
-
-        ax.legend(loc='upper left', fontsize=8)
-        return fig, now, counts, events
-    else:
-        fig = go.Figure()
-        now = df[df.time == t]
-        hist = df[df.time <= t]
-        counts, events = {}, []
-
-        for drone_id, path in hist.groupby("id"):
-            c = COLORS[path["type"].iloc[0]]
-            fig.add_trace(go.Scatter3d(
-                x=path["x"],
-                y=path["y"],
-                z=path["z"],
-                mode="lines",
-                name=drone_id,
-                line=dict(color=c, width=2)
+    # Process each drone.
+    drone_ids = df['id'].unique()
+    for did in drone_ids:
+        traj = df[(df.id == did) & (df.time <= t)]
+        if traj.empty:
+            continue
+        # Choose color.
+        color = "red" if traj.iloc[-1]['type'] == "Shahed" else ("blue" if traj.iloc[-1]['type'] == "DJI Mavic" else "green")
+        fig.add_trace(go.Scatter3d(
+            x=traj['x'],
+            y=traj['y'],
+            z=traj['z'],
+            mode='lines+markers',
+            marker=dict(size=4, color=color),
+            line=dict(color=color, width=3),
+            name=f"{did} Trajectory",
+            hoverinfo='text',
+            text=[f"{did} t={t_val}" for t_val in traj['time']]
+        ))
+        # For high-threat drones, add projected impact sphere.
+        last = traj.iloc[-1]
+        if last['type'] == "Shahed":
+            proj_x, proj_y, proj_z, impact_radius = compute_impact_zone(last.x, last.y, last.z, last.velocity_x, last.velocity_y, last.velocity_z, seconds=5)
+            # Create sphere mesh (approximation).
+            u = np.linspace(0, 2*np.pi, 20)
+            v = np.linspace(0, np.pi, 10)
+            xs = proj_x + impact_radius * np.outer(np.cos(u), np.sin(v))
+            ys = proj_y + impact_radius * np.outer(np.sin(u), np.sin(v))
+            zs = proj_z + impact_radius * np.outer(np.ones(np.size(u)), np.cos(v))
+            # Use wireframe as a surface.
+            fig.add_trace(go.Surface(
+                x=xs,
+                y=ys,
+                z=zs,
+                colorscale=[[0, 'red'], [1, 'red']],
+                opacity=0.3,
+                showscale=False,
+                name=f"{last['id']} Impact Zone",
+                hoverinfo='skip'
             ))
+    
+    # Add friendly units as 3D markers.
+    for name, (fx, fy, fz) in friendly_units.items():
+        fig.add_trace(go.Scatter3d(
+            x=[fx],
+            y=[fy],
+            z=[fz],
+            mode='markers+text',
+            marker=dict(size=8, color="black", symbol="diamond"),
+            text=[name],
+            textposition="top center",
+            name="Friendly Unit"
+        ))
+    
+    fig.update_layout(
+        title=f"3D Drone Tracker – Time = {t} s",
+        scene=dict(
+            xaxis_title="X (m)",
+            yaxis_title="Y (m)",
+            zaxis_title="Altitude (m)",
+            xaxis=dict(range=[-700,700]),
+            yaxis=dict(range=[-700,700]),
+            zaxis=dict(range=[0,400])
+        ),
+        margin={"r":0,"t":30,"l":0,"b":0}
+    )
+    return fig, frame
 
-        for _, r in now.iterrows():
-            counts[r.type] = counts.get(r.type, 0) + 1
-            c = COLORS[r.type]
-            fig.add_trace(go.Scatter3d(
-                x=[r.x],
-                y=[r.y],
-                z=[r.z],
-                mode="markers+text",
-                marker=dict(size=6, color=c),
-                text=[r.id],
-                textposition="top center",
-                showlegend=False
-            ))
-            if r.type == "Shahed":
-                events.append(f"ALERT {r.id} at ({r.x:.0f},{r.y:.0f})")
+#-----------------------------------------------------------
+# 6. Streamlit Interface with Tabs for 2D and 3D Views
+#-----------------------------------------------------------
+st.set_page_config(page_title="Drone Intelligence Dashboard", layout="wide")
+st.title("Drone Intelligence Dashboard – Multi-View")
 
-        for name, (ix, iy, iz) in infantry.items():
-            fig.add_trace(go.Scatter3d(
-                x=[ix],
-                y=[iy],
-                z=[iz],
-                mode="markers+text",
-                marker=dict(symbol="square", size=6, color="black"),
-                text=[name],
-                textposition="top center",
-                showlegend=False
-            ))
+st.markdown("""
+This dashboard monitors enemy drone activity in both geographic (2D) and local cartesian (3D) views.  
+Use the controls in the sidebar to select the region, time, and simulate in real time.
+""")
 
-        fig.update_layout(
-            scene=dict(
-                xaxis=dict(range=[-600, 600]),
-                yaxis=dict(range=[-600, 600]),
-                zaxis=dict(range=[0, 500])
-            ),
-            height=600,
-            margin=dict(l=0, r=0, t=30, b=0),
-            title=f"Drone Tracker t={t}s"
-        )
-        return fig, now, counts, events
+# Sidebar Controls:
+st.sidebar.header("Simulation Controls")
+selected_region = st.sidebar.selectbox("Select Base Region", list(reference_locations.keys()))
+ref_location = reference_locations[selected_region]
+t_slider = st.sidebar.slider("Select Time (s)", 0, int(df.time.max()), 0, step=1)
+play = st.sidebar.button("Play Live Simulation")
+update_interval = st.sidebar.number_input("Simulation Speed (seconds per frame)", min_value=0.1, max_value=5.0, value=0.75, step=0.1)
 
-# --- Render Function ---
-def render(t):
-    fig2d, frame2d, counts, events = plot_frame(t, three_d=False)
-    matplotlib_placeholder.pyplot(fig2d)
+# Create two tabs: one for 2D Map and one for 3D view.
+tab2d, tab3d = st.tabs(["2D Map View", "3D View"])
 
-    fig3d, *_ = plot_frame(t, three_d=True)
-    plotly_placeholder.plotly_chart(fig3d, use_container_width=True)
+# Placeholders for each tab to update without clearing the entire layout.
+with tab2d:
+    map_placeholder = st.empty()
+with tab3d:
+    fig3d_placeholder = st.empty()
 
-    info_lines = ["**Counts:**"] + [f"- {k}: {v}" for k, v in counts.items()] + ["\n**Closest:**"]
-    for name, pos in infantry.items():
-        dmin, nearest = float("inf"), "—"
-        for _, row in frame2d.iterrows():
-            d = distance((row.x, row.y, row.z), pos)
-            if d < dmin:
-                dmin, nearest = d, row.id
-        info_lines.append(f"- {name}: {nearest} @ {dmin:.1f}m")
+# Function to generate a textual summary for current frame.
+def generate_summary(frame):
+    lines = []
+    drone_counts = frame['type'].value_counts().to_dict()
+    lines.append("**Drone Counts:**")
+    for dtype, count in drone_counts.items():
+        lines.append(f"- {dtype}: {count}")
+    lines.append("**Nearest Drone (by friendly unit):**")
+    for name, pos in friendly_units.items():
+        min_dist = float("inf")
+        closest = None
+        for _, row in frame.iterrows():
+            d = math.sqrt((pos[0]-row.x)**2 + (pos[1]-row.y)**2 + (pos[2]-row.z)**2)
+            if d < min_dist:
+                min_dist = d
+                closest = f"{row['id']} ({row['type']})"
+        lines.append(f"- {name}: {closest} ({min_dist:.1f} m)")
+    return "\n".join(lines)
 
-    status_placeholder.markdown("\n".join(info_lines))
-    alerts_placeholder.markdown("\n".join(f"- {msg}" for msg in events) or "No alerts.")
+details_placeholder = st.empty()
 
-# --- Main Simulation Logic ---
-def main():
-    current_time = st.session_state.simulation_time
-    render(current_time)
-
-    if st.session_state.playing:
-        if current_time < df.time.max():
-            time.sleep(0.3)  # Delay for smooth playback
-            st.session_state.simulation_time = current_time + 1
-            st.experimental_rerun()  # Try running the rerun directly without exceptions
-
-if __name__ == "__main__":
-    main()
+#-----------------------------------------------------------
+# 7. Simulation Update Loop
+#-----------------------------------------------------------
+if play:
+    max_time = int(df.time.max())
+    # Run simulation from the slider value to max_time.
+    for t in range(t_slider, max_time + 1):
+        fig2d, frame2d = build_map_figure(t, ref_location)
+        fig3d, frame3d = build_3d_figure(t)
+        map_placeholder.plotly_chart(fig2d, use_container_width=True)
+        fig3d_placeholder.plotly_chart(fig3d, use_container_width=True)
+        details_placeholder.markdown(generate_summary(frame2d))
+        time.sleep(update_interval)
+    st.session_state["t_slider"] = max_time
+else:
+    fig2d, frame2d = build_map_figure(t_slider, ref_location)
+    fig3d, frame3d = build_3d_figure(t_slider)
+    map_placeholder.plotly_chart(fig2d, use_container_width=True)
+    fig3d_placeholder.plotly_chart(fig3d, use_container_width=True)
+    details_placeholder.markdown(generate_summary(frame2d))
