@@ -49,8 +49,9 @@ df = make_dummy_data()
 friendly_assets = [(80, -50), (-100, 100)]  # fixed coords
 # Single ring at 100m
 ring = 100
-# Sphere sizes per drone
-droner = {'D1':5,'D2':4,'D3':3}
+# Marker and shading sizes per drone (meters)
+marker_size = {'D1':5, 'D2':4, 'D3':3}
+shading_radius = {'D1': marker_size['D1'] * 2.0, 'D2': marker_size['D2'] * 1.8, 'D3': marker_size['D3'] * 1.5}
 
 # Impact calculation
 def compute_impact(x,y,z,vx,vy,vz,sec=5):
@@ -59,7 +60,7 @@ def compute_impact(x,y,z,vx,vy,vz,sec=5):
     return px,py,pz, 0.15*dist+5
 
 #######################################
-# Plot Functions
+# Plot Functions with center marker
 #######################################
 
 def plot_3d(t):
@@ -72,21 +73,27 @@ def plot_3d(t):
     y_ring = ring * np.sin(theta)
     ax.plot(x_ring, y_ring, np.zeros_like(theta), '--', color='black')
     ax.text(ring*np.cos(np.pi/4), ring*np.sin(np.pi/4), 0, f"{ring}m", color='black')
+    # center/base marker
+    ax.scatter(0, 0, 0, marker='*', c='black', s=100)
+    ax.text(0, 0, 0, " Base", color='black')
     # assets
     for axx,ayy in friendly_assets:
         ax.scatter(axx, ayy, 0, marker='s', c='black', s=80)
     # history
     for d in df['id'].unique(): hist = df[(df.id==d)&(df.time<=t)]; ax.plot(hist.x, hist.y, hist.z, ':', color='gray')
-    # current positions
+    # current positions with shading
     for _,r in df[df.time==t].iterrows():
         c = 'red' if r.id=='D1' else 'blue' if r.id=='D2' else 'green'
-        # sphere
+        # shaded sphere
         u,v = np.mgrid[0:2*np.pi:12j,0:np.pi:6j]
-        xs = r.x + droner[r.id]*np.cos(u)*np.sin(v)
-        ys = r.y + droner[r.id]*np.sin(u)*np.sin(v)
-        zs = r.z + droner[r.id]*np.cos(v)
+        rad = shading_radius[r.id]
+        xs = r.x + rad*np.cos(u)*np.sin(v)
+        ys = r.y + rad*np.sin(u)*np.sin(v)
+        zs = r.z + rad*np.cos(v)
         ax.plot_surface(xs, ys, zs, color=c, alpha=0.2)
-        ax.scatter(r.x, r.y, r.z, c=c, s=20)
+        # smaller marker
+        ms = marker_size[r.id]
+        ax.scatter(r.x, r.y, r.z, c=c, s=ms*4)  # scaled for matplotlib
         ax.text(r.x+5, r.y+5, r.z+5, r.id, color=c)
     ax.set_box_aspect([1,1,0.8])
     return fig
@@ -100,16 +107,21 @@ def plot_2d(t):
     circ = plt.Circle((0,0), ring, fill=False, linestyle='--', color='black')
     ax.add_patch(circ)
     ax.text(ring/np.sqrt(2), ring/np.sqrt(2), f"{ring}m", color='black')
+    # center/base marker
+    ax.scatter(0, 0, marker='*', c='black', s=100)
+    ax.text(0, 0, " Base", color='black')
     # assets
     for axx,ayy in friendly_assets:
         ax.scatter(axx, ayy, marker='s', c='black', s=80)
     # history
     for d in df['id'].unique(): hist = df[(df.id==d)&(df.time<=t)]; ax.plot(hist.x, hist.y, ':', color='gray')
-    # current
+    # current with shading
     for _,r in df[df.time==t].iterrows():
         c = 'red' if r.id=='D1' else 'blue' if r.id=='D2' else 'green'
-        ax.add_patch(plt.Circle((r.x, r.y), droner[r.id], color=c, alpha=0.2))
-        ax.plot(r.x, r.y, 'o', color=c, markersize=4)
+        rad = shading_radius[r.id]
+        ax.add_patch(plt.Circle((r.x, r.y), rad, color=c, alpha=0.2))
+        ms = marker_size[r.id]
+        ax.plot(r.x, r.y, 'o', color=c, markersize=ms*2)
         ax.text(r.x+5, r.y+5, r.id, color=c)
     ax.grid(True, linestyle='--', color='gray', alpha=0.5)
     ax.set_aspect('equal')
@@ -118,6 +130,7 @@ def plot_2d(t):
 #######################################
 # UI Layout
 #######################################
+
 st.title("Drone SkyView - v3.22")
 # Controls in thin column
 top_cols = st.columns([1,10,10])
